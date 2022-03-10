@@ -4,7 +4,11 @@ Minimal virus genome coverage assessment for metagenomic diagnostics
 
 ## Overview
 
-Viral metagenomic diagnostics from low-abundance clinical samples - like blood or CSF - can be challenging in the absence of high genome coverage. `Vircov` extracts the number of distinct non-overlapping alignments against a reference sequence. 
+Viral metagenomic diagnostics from low-abundance clinical samples can be challenging in the absence of sufficient genome coverage. `Vircov` extracts the number of distinct non-overlapping alignments against a reference sequence. It can be used to automate the flagging of potential hits without manual evaluation of coverage plots.
+
+## Implementation
+
+
 
 
 
