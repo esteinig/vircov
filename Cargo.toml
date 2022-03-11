@@ -1,0 +1,35 @@
+[package]
+rust = "1.58"
+name = "vircov"
+version = "0.1.0"
+authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
+description = "Vircov: genome coverage assessment for viral metagenomic diagnostics"
+documentation = "https://github.com/esteinig/vircov"
+homepage = "https://github.com/esteinig/vircov"
+repository = "https://github.com/esteinig/vircov"
+readme = "README.md"
+keywords = ["meta-gp", "viral", "metagenomics", "coverage", "diagnostics"]
+categories = ["science"]
+license = "MIT"
+edition = "2018"
+include = [
+    "**/*.rs",
+    "src/data/*",
+    "Cargo.toml"
+]
+
+[dependencies]
+anyhow = "1.0"
+structopt = "0.3"
+clap = "2.33.0"
+rayon = "1.5.1"
+thiserror = "1.0"
+env_logger = "0.9.0"
+log = "0.4.0"
+float_eq = "0.6.1"
+rust-lapper = "1.0.0"
+itertools = "0.10.3"
+
+[[bin]]
+name = "vircov"
+path = "src/main.rs"
