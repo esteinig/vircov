@@ -1,11 +1,11 @@
 use anyhow::Result;
-use itertools::Itertools;
+use noodles::fasta;
 use rust_lapper::{Interval, Lapper};
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::btree_map::Entry;
+use std::collections::{HashMap, BTreeMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /*
@@ -15,13 +15,13 @@ Custom error definitions
 */
 
 #[derive(Error, Debug)]
-pub enum PafAlignmentError {
+pub enum PafFileError {
     /// Indicates failure to read file
     #[error("failed to read file")]
-    PafAlignmentFileError(#[from] std::io::Error),
+    PafFileIOError(#[from] std::io::Error),
     /// Indicates failure to read a line into record
     #[error("failed to parse record")]
-    PafAlignmentRecordError(#[from] PafRecordError),
+    PafRecordError(#[from] PafRecordError),
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -42,40 +42,98 @@ PAF alignment file parser
 
 /// Paf struct
 #[derive(Debug, Clone)]
-pub struct PafAlignment {
+pub struct PafFile {
+    /// PafRecords parsed from file (PAF)
     records: Vec<PafRecord>,
+    /// Reference sequence names and lengths from file (FASTA)
+    seq_lengths: Option<HashMap<String, u64>>,
 }
 
-impl PafAlignment {
-    // Parse alignment from file, includes basic filters
+impl PafFile {
+    // Parse alignments from file without filtering
     pub fn from(
-        path: &Path,
-        min_len: u64,
-        min_cov: f64,
+        path: PathBuf,
+        // Reference sequence fasta
+        fasta: Option<PathBuf>,
+        // Minimum query alignment length
+        min_qaln_len: u64,
+        // Minimum query coverage
+        min_qaln_cov: f64,
+        // Minimum mapping quality
         min_mapq: u8,
-    ) -> Result<Self, PafAlignmentError> {
-        let input = File::open(path)?;
-        let buffered = BufReader::new(input);
-
-        // Parse records from alignment file using filters
+    ) -> Result<Self, PafFileError> {
+        let paf_file = File::open(path).map(BufReader::new)?;
         let mut records = Vec::new();
-        for line in buffered.lines() {
+        for line in paf_file.lines() {
             let record = PafRecord::from_str(line?)?;
-
-            if record.query_aligned_length()? >= min_len
-                && record.query_coverage()? >= min_cov
+            if record.query_aligned_length()? >= min_qaln_len
+                && record.query_coverage()? >= min_qaln_cov
                 && record.mapq >= min_mapq
             {
                 records.push(record);
             }
         }
 
-        Ok(Self { records })
+        match fasta {
+            Some(fasta_path) => {
+                let mut reader = File::open(fasta_path)
+                    .map(BufReader::new)
+                    .map(fasta::Reader::new)?;
+
+                let mut lengths: HashMap<String, u64> = HashMap::new();
+                for result in reader.records() {
+                    let record = result?;
+                    lengths.insert(record.name().to_string(), record.sequence().len() as u64);
+                }
+
+                Ok(Self {
+                    records,
+                    seq_lengths: Some(lengths),
+                })
+            }
+            None => Ok(Self {
+                records,
+                seq_lengths: None,
+            }),
+        }
     }
-    pub fn target_intervals(&self) -> Result<HashMap<String, Lapper<usize, u64>>, PafAlignmentError> {
+    /// Compute coverage distribution by target sequence
+    pub fn target_coverage_distribution(&self) -> Result<(), PafFileError> {
+        for (target_name, mut target_lapper) in self.target_intervals()? {
+            // Bases of target sequence covered
+            let target_cov_bp = target_lapper.cov();
+            
+            let target_seq_len = match &self.seq_lengths {
+                None => Some(&0),
+                Some(seqs) => seqs.get(&target_name)
+            };
 
-        let mut target_intervals: HashMap<String, Vec<Interval<usize, u64>>> = HashMap::new();
+            let target_seq_cov = match target_seq_len {
+                None => 0_f64,
+                Some(0) => 0_f64,
+                Some(seq_len) => {
+                    target_cov_bp as f64 / *seq_len as f64
+                }
+            };
 
+            let target_seq_len_display = match target_seq_len {
+                None => 0,
+                Some(seq_len) => *seq_len
+            };
+
+            // Number of coverage blocks on target sequence
+            target_lapper.merge_overlaps();
+            let target_cov_n = target_lapper.intervals.len();
+            
+
+            println!("{}\t{}\t{}\t{:.4}\t{}", target_cov_n, target_cov_bp, target_seq_len_display, target_seq_cov, &target_name);
+        }
+
+        Ok(())
+    }
+    /// Get target alignment interval lappers by target sequence
+    fn target_intervals(&self) -> Result<Vec<(String, Lapper<usize, u64>)>, PafFileError> {
+        let mut target_intervals: BTreeMap<String, Vec<Interval<usize, u64>>> = BTreeMap::new();
         for record in &self.records {
             match target_intervals.entry(record.tname.clone()) {
                 Entry::Occupied(mut entry) => {
@@ -98,20 +156,10 @@ impl PafAlignment {
         let target_lappers = target_intervals
             .into_iter()
             .map(|entry| (entry.0, Lapper::new(entry.1)))
-            .collect::<HashMap<String, Lapper<usize, u64>>>();
-
+            .collect::<Vec<(String, Lapper<usize, u64>)>>();
 
         Ok(target_lappers)
-
     }
-    // Compute coverage given the total size of the target sequence
-    pub fn target_alignment_coverage(&self, target_size: u64) -> Result<f64, PafAlignmentError> {
-        match target_size == 0 {
-            true => Ok(0_f64),
-            false => Ok(1 as f64 / target_size as f64),
-        }
-    }
-    pub fn target_alignment_intervals() {}
 }
 
 /*
@@ -122,6 +170,7 @@ PAF record struct
 
 /// PAF record without tags
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct PafRecord {
     /// Query sequence name.
     qname: String,
@@ -311,16 +360,17 @@ mod tests {
     #[test]
     fn paf_parser_create_new_no_filter_ok() {
         let test_cases = TestCases::new();
-        let paf_aln = PafAlignment::from(&test_cases.paf_test_file_ok, 0_u64, 0_f64, 0_u8).unwrap();
-        assert_eq!(paf_aln.records.len(), 70);
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        assert_eq!(paf_aln.records.len(), 5);
     }
     #[test]
     #[should_panic]
     fn paf_parser_create_new_record_size_fail() {
         let test_cases = TestCases::new();
         // PafAlignmentError does not implement PartialEq to assure standard Error type for parsing, let test fail instead
-        let _ = PafAlignment::from(
-            &test_cases.paf_test_file_record_size_fail,
+        let _ = PafFile::from(
+            test_cases.paf_test_file_record_size_fail,
+            None,
             0_u64,
             0_f64,
             0_u8,
@@ -331,20 +381,21 @@ mod tests {
     fn paf_parser_create_new_filter_mapq_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(&test_cases.paf_test_file_ok, 0_u64, 0_f64, 30_u8).unwrap();
-        assert_eq!(paf_aln.records.len(), 66);
+            PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
+        println!("{:?}", paf_aln.records);
+        assert_eq!(paf_aln.records.len(), 2);
     }
     #[test]
     fn paf_parser_create_new_filter_min_len_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(&test_cases.paf_test_file_ok, 50_u64, 0_f64, 0_u8).unwrap();
-        assert_eq!(paf_aln.records.len(), 65);
+            PafFile::from(test_cases.paf_test_file_ok, None, 50_u64, 0_f64, 0_u8).unwrap();
+        assert_eq!(paf_aln.records.len(), 3);
     }
     #[test]
     fn paf_parser_create_new_filter_min_cov_ok() {
         let test_cases = TestCases::new();
-        let paf_aln = PafAlignment::from(&test_cases.paf_test_file_ok, 0_u64, 0.5, 0_u8).unwrap();
-        assert_eq!(paf_aln.records.len(), 66);
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
+        assert_eq!(paf_aln.records.len(), 3);
     }
 }

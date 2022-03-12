@@ -2,8 +2,7 @@ use anyhow::Result;
 use structopt::StructOpt;
 
 use crate::cli::Cli;
-use crate::cli::Commands::Flag;
-use crate::paf::PafAlignment;
+use crate::paf::PafFile;
 use crate::vircov::Vircov;
 
 mod cli;
@@ -20,16 +19,13 @@ fn main() -> Result<()> {
     let args = Cli::from_args();
     let vircov = Vircov::new();
 
-    match args.commands {
-        Flag {
-            paf,
-            min_len,
-            min_cov,
-            min_mapq,
-        } => {
-            let paf_align = PafAlignment::from(&paf, min_len, min_cov, min_mapq)?;
-        }
-    }
-
+    let paf = PafFile::from(
+        args.paf,
+        args.fasta,
+        args.min_qaln_len,
+        args.min_qaln_cov,
+        args.min_mapq,
+    )?;
+    paf.target_coverage_distribution()?;
     Ok(())
 }
