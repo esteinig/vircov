@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use thiserror::Error;
+use itertools::Itertools;
 
 /*
 ========================
@@ -143,12 +144,10 @@ impl PafFile {
             
 
             // Get the number of unique reads in the alignments
-            let mut reads = targets.iter().map(|interval| interval.val.to_owned()).collect::<Vec<String>>();
-            reads.dedup_by(|a, b| a == b);
+            let reads: Vec<String> = targets.iter().map(|interval| interval.val.to_owned()).collect::<Vec<String>>();
+            let unique_reads = reads.into_iter().unique().collect::<Vec<String>>();
 
-            println!("{:?}", reads);
-
-            println!("{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, reads.len(), targets.len(), target_cov_bp, target_seq_len_display, target_seq_cov, tags);
+            println!("{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, unique_reads.len(), targets.len(), target_cov_bp, target_seq_len_display, target_seq_cov, tags);
         }
 
         Ok(())

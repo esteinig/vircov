@@ -30,6 +30,8 @@ float_eq = "0.6.1"
 rust-lapper = "1.0.0"
 noodles = { version = "0.20.0", features = ["fasta"] }
 crossterm = "0.23.0"
+itertools = "0.10.3"
+
 [[bin]]
 name = "vircov"
 path = "src/main.rs"
