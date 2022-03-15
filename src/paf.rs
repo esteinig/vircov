@@ -141,31 +141,35 @@ impl PafFile {
                 }
             };
             
-            
 
+            // Get the number of unique reads in the alignments
+            let mut reads = targets.iter().map(|interval| interval.val.to_owned()).collect::<Vec<String>>();
+            reads.dedup_by(|a, b| a == b);
 
-            println!("{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, target_cov_bp, target_seq_len_display, target_seq_cov, tags);
+            println!("{:?}", reads);
+
+            println!("{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, reads.len(), targets.len(), target_cov_bp, target_seq_len_display, target_seq_cov, tags);
         }
 
         Ok(())
     }
     /// Get target alignment interval lappers by target sequence
-    fn target_intervals(&self) -> Result<Vec<(String, Lapper<usize, u64>)>, PafFileError> {
-        let mut target_intervals: BTreeMap<String, Vec<Interval<usize, u64>>> = BTreeMap::new();
+    fn target_intervals(&self) -> Result<Vec<(String, Lapper<usize, String>)>, PafFileError> {
+        let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
         for record in &self.records {
             match target_intervals.entry(record.tname.clone()) {
                 Entry::Occupied(mut entry) => {
                     entry.get_mut().push(Interval {
                         start: record.tstart,
                         stop: record.tend,
-                        val: 0,
+                        val: record.qname.clone(),  // add the query read name here for reference, see if it affects performance
                     });
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(vec![Interval {
                         start: record.tstart,
                         stop: record.tend,
-                        val: 0,
+                        val: record.qname.clone(),
                     }]);
                 }
             }
@@ -174,7 +178,7 @@ impl PafFile {
         let target_lappers = target_intervals
             .into_iter()
             .map(|entry| (entry.0, Lapper::new(entry.1)))
-            .collect::<Vec<(String, Lapper<usize, u64>)>>();
+            .collect::<Vec<(String, Lapper<usize, String>)>>();
 
         Ok(target_lappers)
     }

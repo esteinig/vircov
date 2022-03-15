@@ -21,13 +21,13 @@ pub struct Cli {
     )]
     pub fasta: Option<PathBuf>,
     /// Minimum lenmgth of the aligned query sequence
-    #[structopt(short = "l", long = "min-len", default_value = "0")]
-    pub min_qaln_len: u64,
+    #[structopt(short = "l", long = "min-len", default_value = "50")]
+    pub min_len: u64,
     /// Minimum coverage of the aligned query sequence
-    #[structopt(short = "c", long = "min-cov", default_value = "0")]
-    pub min_qaln_cov: f64,
+    #[structopt(short = "c", long = "min-cov", default_value = "0.5")]
+    pub min_cov: f64,
     /// Minimum mapping quality of the alignment
-    #[structopt(short = "q", long = "min-mapq", default_value = "0")]
+    #[structopt(short = "q", long = "min-mapq", default_value = "30")]
     pub min_mapq: u8,
 }
 

@@ -21,8 +21,8 @@ fn main() -> Result<()> {
     let paf = PafFile::from(
         args.paf,
         args.fasta,
-        args.min_qaln_len,
-        args.min_qaln_cov,
+        args.min_len,
+        args.min_cov,
         args.min_mapq,
     )?;
     
