@@ -3,11 +3,11 @@ use structopt::StructOpt;
 
 use crate::cli::Cli;
 use crate::paf::PafFile;
-use crate::vircov::Vircov;
+use crate::covplot::CovPlot;
 
 mod cli;
 mod paf;
-mod vircov;
+mod covplot;
 
 /// Vircov application
 ///
@@ -17,7 +17,6 @@ fn main() -> Result<()> {
     env_logger::init();
 
     let args = Cli::from_args();
-    let vircov = Vircov::new();
 
     let paf = PafFile::from(
         args.paf,
@@ -26,6 +25,8 @@ fn main() -> Result<()> {
         args.min_qaln_cov,
         args.min_mapq,
     )?;
-    paf.target_coverage_distribution()?;
+    
+    paf.target_coverage_distribution(1)?;
+
     Ok(())
 }

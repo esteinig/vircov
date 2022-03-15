@@ -98,10 +98,10 @@ impl PafFile {
         }
     }
     /// Compute coverage distribution by target sequence
-    pub fn target_coverage_distribution(&self) -> Result<(), PafFileError> {
-        for (target_name, mut target_lapper) in self.target_intervals()? {
+    pub fn target_coverage_distribution(&self, verbosity: u8) -> Result<(), PafFileError> {
+        for (target_name, targets) in self.target_intervals()? {
             // Bases of target sequence covered
-            let target_cov_bp = target_lapper.cov();
+            let target_cov_bp = targets.cov();
             
             let target_seq_len = match &self.seq_lengths {
                 None => Some(&0),
@@ -121,12 +121,30 @@ impl PafFile {
                 Some(seq_len) => *seq_len
             };
 
-            // Number of coverage blocks on target sequence
-            target_lapper.merge_overlaps();
-            let target_cov_n = target_lapper.intervals.len();
+            let mut merged_targets = targets.clone();
+            merged_targets.merge_overlaps();
+
+            let target_cov_n = merged_targets.intervals.len();
+
+            let tags = match verbosity {
+                1 => {
+                    // Get the merged target interval data [start:stop:count]
+                    let merged_target_intervals = merged_targets.depth().collect::<Vec<Interval<usize, usize>>>();
+                    let merged_target_interval_strings = merged_target_intervals.iter().map(|i|{
+                        let _start = i.start; let _stop = i.stop; let _count = targets.count(i.start, i.stop);
+                        format!("{_start}:{_stop}:{_count}")
+                    }).collect::<Vec<String>>();
+                    merged_target_interval_strings.join(" ")
+                },
+                _ => {
+                    "".to_string()
+                }
+            };
+            
             
 
-            println!("{}\t{}\t{}\t{:.4}\t{}", target_cov_n, target_cov_bp, target_seq_len_display, target_seq_cov, &target_name);
+
+            println!("{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, target_cov_bp, target_seq_len_display, target_seq_cov, tags);
         }
 
         Ok(())
