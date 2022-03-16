@@ -26,7 +26,8 @@ fn main() -> Result<()> {
         args.min_mapq,
     )?;
     
-    paf.target_coverage_distribution(1)?;
-
+    paf.target_coverage_distribution(args.verbose)?;
+    paf.target_coverage_plots(100)?;
+    
     Ok(())
 }

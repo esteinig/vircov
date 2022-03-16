@@ -8,6 +8,8 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use thiserror::Error;
 use itertools::Itertools;
+use crate::covplot::CovPlot;
+use crossterm::style::Color;
 
 /*
 ========================
@@ -23,6 +25,12 @@ pub enum PafFileError {
     /// Indicates failure to read a line into record
     #[error("failed to parse record")]
     PafRecordError(#[from] PafRecordError),
+    /// Indicates a failure to get sequence length require for coverage plots
+    #[error("failed to get sequence length for coverage plot")]
+    PafCovPlotSeqLengthError(),
+    /// Indicates failure with the coverage plot module
+    #[error("failed to generate data for coverage plot")]
+    PafCovPlotError(#[from] crate::covplot::CovPlotError),
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -99,7 +107,7 @@ impl PafFile {
         }
     }
     /// Compute coverage distribution by target sequence
-    pub fn target_coverage_distribution(&self, verbosity: u8) -> Result<(), PafFileError> {
+    pub fn target_coverage_distribution(&self, verbosity: u64) -> Result<(), PafFileError> {
         for (target_name, targets) in self.target_intervals()? {
             // Bases of target sequence covered
             let target_cov_bp = targets.cov();
@@ -152,6 +160,32 @@ impl PafFile {
 
         Ok(())
     }
+    /// Print the target coverage distributions to console in a reduced (approximate) text plot
+    pub fn target_coverage_plots(&self, max_width: u64) -> Result<(), PafFileError>{
+
+
+        println!();
+        for (target_name, targets) in self.target_intervals()? {
+
+            let target_seq_len = match &self.seq_lengths {
+                None => Some(&0),
+                Some(seqs) => seqs.get(&target_name)
+            };
+
+           let seq_length = match target_seq_len {
+                None => return Err(PafFileError::PafCovPlotSeqLengthError()),
+                Some(value) => *value
+            };
+
+            let covplot = CovPlot::new(targets, seq_length, max_width)?;
+
+            covplot.to_console(target_name, Color::Red)?;
+
+        }
+
+        Ok(())
+    }
+
     /// Get target alignment interval lappers by target sequence
     fn target_intervals(&self) -> Result<Vec<(String, Lapper<usize, String>)>, PafFileError> {
         let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
