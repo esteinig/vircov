@@ -3,7 +3,6 @@ use structopt::StructOpt;
 
 use crate::cli::Cli;
 use crate::paf::PafFile;
-use crate::covplot::CovPlot;
 
 mod cli;
 mod paf;
@@ -13,13 +12,13 @@ mod covplot;
 ///
 /// Run the application from arguments provided
 /// by the command line interface
+#[cfg(not(tarpaulin_include))]
 fn main() -> Result<()> {
-    env_logger::init();
 
     let args = Cli::from_args();
 
     let paf = PafFile::from(
-        args.paf,
+        args.path,
         args.fasta,
         args.min_len,
         args.min_cov,
@@ -28,6 +27,6 @@ fn main() -> Result<()> {
     
     paf.target_coverage_distribution(args.verbose)?;
     paf.target_coverage_plots(100)?;
-    
+
     Ok(())
 }

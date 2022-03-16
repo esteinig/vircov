@@ -57,8 +57,8 @@ impl CovPlot {
 
         // For each segment interval, use the merged target coverage regions to determine whether they are
         // contained within the segment interval: 
-        //      0 indicates it is not
-        //      1 indicates it is
+        //      0 indicates it is not contained
+        //      1 indicates it is contained
         //      2 indicates a coundary between two merged target regions
         let tagged_segments = segment_intervals.iter().map(|x| {
             let _count = merged_targets.find(x.start, x.stop).count();
@@ -73,8 +73,8 @@ impl CovPlot {
     }
 
     // Prints the five prime end to console in default style
-    pub fn to_console(&self, seq_name: String, coverage_color: Color) -> Result<(), CovPlotError>{
-        println!("{}", seq_name);
+    pub fn to_console(&self, seq_name: String, seq_length: u64, coverage_color: Color) -> Result<(), CovPlotError>{
+        println!("{}  - {} bp", seq_name, seq_length);
         execute!(
             stdout(),
             Print("5'")
@@ -84,7 +84,7 @@ impl CovPlot {
                 0 => (Color::Reset, Attribute::Reset),
                 1 => (coverage_color, Attribute::Reset),
                 2 => (coverage_color, Attribute::Bold),
-                _ => (Color::Yellow, Attribute::Underlined)
+                _ => (Color::Yellow, Attribute::Bold)
             };
             execute!(
                 stdout(),

@@ -179,7 +179,7 @@ impl PafFile {
 
             let covplot = CovPlot::new(targets, seq_length, max_width)?;
 
-            covplot.to_console(target_name, Color::Red)?;
+            covplot.to_console(target_name, seq_length, Color::Red)?;
 
         }
 
@@ -311,13 +311,15 @@ mod tests {
     struct TestCases {
         // Valid PAF record struct instance
         paf_test_record_ok: PafRecord,
-        // Valid PAF string with sufficient fields to parse
+        // Valid PAF string, sufficient fields to parse
         paf_test_str_ok: String,
-        // Invalid PAF string with too few fields to parse
+        // Invalid PAF string, too few fields to parse
         paf_test_str_size_fail: String,
-        // Path to file with valid PAF format where records are formatted correctly
+        // Valid PAF file 
         paf_test_file_ok: PathBuf,
-        // Path to file with invalid PAF format where record has too few fields
+        // Valid FASTA file
+        paf_test_fasta_ok: PathBuf,
+        // Invalid PAF format, record has too few fields
         paf_test_file_record_size_fail: PathBuf,
     }
 
@@ -345,6 +347,7 @@ mod tests {
                     "query\t4\t400\t404\t+\ttarget\t5\t500\t504\t4\t4",
                 ),
                 paf_test_file_ok: PathBuf::from("tests/cases/test_ok.paf"),
+                paf_test_fasta_ok: PathBuf::from("tests/cases/test_ok.fasta"),
                 paf_test_file_record_size_fail: PathBuf::from(
                     "tests/cases/test_record_size_fail.paf",
                 ),
