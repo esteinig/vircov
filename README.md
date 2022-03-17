@@ -33,9 +33,7 @@ Definitive viral diagnosis from metagenomic clinical samples can be extremely ch
 
 ![devries](https://user-images.githubusercontent.com/12873366/158775480-447d847e-5b0d-487c-a39a-81bdf428e09d.png)
 
-
-
-Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold of > 3 is chosen by the authors to make a positive call. However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
+Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold on the number of regions is chosen by the authors (> 3). However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
 
 `Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reporting some helpful statistics to make an educated call without having to generate coverage plots. 
 
