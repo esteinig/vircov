@@ -25,7 +25,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 `Vircov` is written in Rust and works with alignments in the standard `PAF` or `SAM/BAM/CRAM` (next release) formats. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments, and text-style coverage plots can be printed to the terminal for visual inspection.
 
-`Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in `META-GP` (Australia). As such, it is meant to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
+`Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
 ## Install
 
