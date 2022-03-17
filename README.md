@@ -27,7 +27,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Concept
 
-Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in samples like blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. Even where only few reads map to the reference and where genome coverage is therefore low (e.g. < 20%) positive calls often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
+Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. Even where only few reads map to the reference and where genome coverage is therefore low (e.g. < 20%) positive calls often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
 
 [De Vries et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1386653221000792) summarize this concept succinctly in this figure (adapted):
 
