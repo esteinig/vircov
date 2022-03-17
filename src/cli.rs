@@ -7,15 +7,15 @@ use structopt::StructOpt;
 #[structopt(name = "vircov")]
 pub struct Cli {
     /// Alignment file (PAF)
-    /// 
+    ///
     /// Alignment input file, currently supports PAF (minimap2)
     #[structopt(
         parse(try_from_os_str = check_file_exists)
     )]
     pub path: PathBuf,
     /// Reference sequences in FASTA format
-    /// 
-    /// If the input are alignments in PAF format, computation of the 
+    ///
+    /// If the input are alignments in PAF format, computation of the
     /// total coverage against each target sequence requires the sequence
     /// lengths extracted from the FASTA file used in the alignment.
     #[structopt(
@@ -25,21 +25,21 @@ pub struct Cli {
     )]
     pub fasta: Option<PathBuf>,
     /// Minimum length of the aligned query sequence
-    /// 
-    /// Filters (&) alignments by minimum length of the aligned query sequence, 
-    /// which corresponds to the difference between query alignment end and 
+    ///
+    /// Filters (&) alignments by minimum length of the aligned query sequence,
+    /// which corresponds to the difference between query alignment end and
     /// start positions.
     #[structopt(short = "l", long = "min-len", default_value = "50")]
     pub min_len: u64,
     /// Minimum coverage of the aligned query sequence
-    /// 
-    /// Filters (&) alignmentsby minimum proportion of the query sequence involved 
+    ///
+    /// Filters (&) alignmentsby minimum proportion of the query sequence involved
     /// in the alignment which corresponds to the division of the length of the
     /// aligned query sequence by the length of the query sequence.
     #[structopt(short = "c", long = "min-cov", default_value = "0")]
     pub min_cov: f64,
     /// Minimum mapping quality of the alignment
-    /// 
+    ///
     /// Filters (&) alignments by a minimum mapping quality.
     #[structopt(short = "q", long = "min-mapq", default_value = "30")]
     pub min_mapq: u8,
@@ -50,7 +50,24 @@ pub struct Cli {
     /// Each tag contains: start of block, end of block and number of
     /// alignments in the block, separated by semicolons (e.g.3450:3500:9)
     #[structopt(short, long, parse(from_occurrences = parse_verbosity))]
-    pub verbose: u64
+    pub verbose: u64,
+    /// Pretty print output table  
+    ///
+    /// Output the coverage statistics as a pretty table.
+    #[structopt(short, long)]
+    pub pretty: bool,
+    /// Prints coverage plots 
+    ///
+    /// Output coverage plots beneath the coverage statistics.
+    #[structopt(short = "t", long)]
+    pub covplot: bool,
+    /// Width of the coverage plots
+    ///
+    /// Adjusts the (approximate) width of the coverage plots by
+    /// computing the bases covered by each coverage segment.
+    #[structopt(short = "w", long, default_value="100")]
+    pub width: u64
+
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
@@ -73,12 +90,10 @@ pub fn parse_verbosity(v: u64) -> u64 {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     #[should_panic]
     fn file_check_not_exist() {
@@ -96,7 +111,6 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
-
     #[test]
     fn valid_verbosity_level() {
         let passed_args = vec!["vircov", "-v", "tests/cases/test_ok.paf"];
@@ -108,7 +122,6 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
-
     #[test]
     fn verbosity_from_occurrences() {
         assert_eq!(parse_verbosity(0), 0);
@@ -116,5 +129,4 @@ mod tests {
         assert_eq!(parse_verbosity(2), 1);
         assert_eq!(parse_verbosity(666), 1);
     }
-
 }

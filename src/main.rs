@@ -5,8 +5,8 @@ use crate::cli::Cli;
 use crate::paf::PafFile;
 
 mod cli;
-mod paf;
 mod covplot;
+mod paf;
 
 /// Vircov application
 ///
@@ -14,7 +14,6 @@ mod covplot;
 /// by the command line interface
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<()> {
-
     let args = Cli::from_args();
 
     let paf = PafFile::from(
@@ -24,9 +23,14 @@ fn main() -> Result<()> {
         args.min_cov,
         args.min_mapq,
     )?;
-    
-    paf.target_coverage_distribution(args.verbose)?;
-    paf.target_coverage_plots(100)?;
+
+    let data = paf.coverage_statistics(args.verbose)?;
+    paf.to_console(data, args.pretty)?;
+
+    match args.covplot {
+        true => paf.coverage_plots(args.width)?, 
+        false => {}
+    }
 
     Ok(())
 }

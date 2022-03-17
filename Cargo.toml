@@ -27,6 +27,7 @@ rust-lapper = "1.0.0"
 noodles = { version = "0.20.0", features = ["fasta"] }
 crossterm = "0.23.0"
 itertools = "0.10.3"
+tabled = "0.5.0"
 
 [dev-dependencies]
 assert_cmd = "2.0.1"

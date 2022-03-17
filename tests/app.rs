@@ -20,7 +20,7 @@ fn valid_inputs_raise_no_errors() -> Result<(), Box<dyn std::error::Error>> {
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
-        "-v"
+        "-v",
     ]);
 
     cmd.assert().success();

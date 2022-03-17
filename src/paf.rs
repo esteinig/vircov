@@ -1,15 +1,16 @@
+use crate::covplot::CovPlot;
 use anyhow::Result;
+use crossterm::style::Color;
+use itertools::Itertools;
 use noodles::fasta;
 use rust_lapper::{Interval, Lapper};
 use std::collections::btree_map::Entry;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use thiserror::Error;
-use itertools::Itertools;
-use crate::covplot::CovPlot;
-use crossterm::style::Color;
+use tabled::{Tabled, Table, Style, MaxWidth, Modify, Column};
 
 /*
 ========================
@@ -43,6 +44,48 @@ pub enum PafRecordError {
     PafRecordIntegerError(#[from] std::num::ParseIntError),
 }
 
+fn display_coverage(cov: &f64) -> String {
+    format!("{:.4}", cov)
+}
+
+fn display_tags(tags: &String) -> String {
+    match tags.as_str() {
+        "" => "-".to_string(),
+        _ => tags.to_owned()
+    }
+}
+
+/// A struct for computed output fields
+#[derive(Debug, Clone, PartialEq, Tabled)]
+pub struct CoverageFields {
+    #[header("Sequence")]
+    /// Name of the target sequence
+    name: String,
+    #[header("Regions")]
+    /// Number of non-overlapping alignment regions
+    regions: u64,
+    #[header("Aligned Reads")]
+    /// Number of unique reads aligned
+    reads: u64,
+    #[header("Alignments")]
+    /// Number of alignments
+    alignments: u64,
+    #[header("Covered Bases")]
+    /// Number of bases covered by alignments
+    bases: u64,
+    #[header("Total Bases")]
+    /// Length of the target sequence
+    length: u64,
+    #[header("Coverage")]
+    #[field(display_with = "display_coverage")]
+    /// Fractional coverage of the alignments
+    coverage: f64,
+    /// Tags for alignment regions
+    #[header("Tags")]
+    #[field(display_with = "display_tags")]
+    tags: String
+}
+
 /*
 =========================
 PAF alignment file parser
@@ -53,9 +96,9 @@ PAF alignment file parser
 #[derive(Debug, Clone)]
 pub struct PafFile {
     /// PafRecords parsed from file (PAF)
-    records: Vec<PafRecord>,
+    pub records: Vec<PafRecord>,
     /// Reference sequence names and lengths from file (FASTA)
-    seq_lengths: Option<HashMap<String, u64>>,
+    pub seq_lengths: Option<HashMap<String, u64>>,
 }
 
 impl PafFile {
@@ -107,27 +150,27 @@ impl PafFile {
         }
     }
     /// Compute coverage distribution by target sequence
-    pub fn target_coverage_distribution(&self, verbosity: u64) -> Result<(), PafFileError> {
+    pub fn coverage_statistics(&self, verbosity: u64) -> Result<Vec<CoverageFields>, PafFileError> {
+
+        let mut coverage_fields: Vec<CoverageFields> = Vec::new();
         for (target_name, targets) in self.target_intervals()? {
             // Bases of target sequence covered
             let target_cov_bp = targets.cov();
-            
+
             let target_seq_len = match &self.seq_lengths {
-                None => Some(&0),
-                Some(seqs) => seqs.get(&target_name)
+                None => None,
+                Some(seqs) => seqs.get(&target_name),
             };
 
             let target_seq_cov = match target_seq_len {
                 None => 0_f64,
                 Some(0) => 0_f64,
-                Some(seq_len) => {
-                    target_cov_bp as f64 / *seq_len as f64
-                }
+                Some(seq_len) => target_cov_bp as f64 / *seq_len as f64,
             };
 
             let target_seq_len_display = match target_seq_len {
                 None => 0,
-                Some(seq_len) => *seq_len
+                Some(seq_len) => *seq_len,
             };
 
             let mut merged_targets = targets.clone();
@@ -138,49 +181,96 @@ impl PafFile {
             let tags = match verbosity {
                 1 => {
                     // Get the merged target interval data [start:stop:count]
-                    let merged_target_intervals = merged_targets.depth().collect::<Vec<Interval<usize, usize>>>();
-                    let merged_target_interval_strings = merged_target_intervals.iter().map(|i|{
-                        let _start = i.start; let _stop = i.stop; let _count = targets.count(i.start, i.stop);
-                        format!("{_start}:{_stop}:{_count}")
-                    }).collect::<Vec<String>>();
+                    let merged_target_intervals = merged_targets
+                        .depth()
+                        .collect::<Vec<Interval<usize, usize>>>();
+                    let merged_target_interval_strings = merged_target_intervals
+                        .iter()
+                        .map(|i| {
+                            let _start = i.start;
+                            let _stop = i.stop;
+                            let _count = targets.count(i.start, i.stop);
+                            format!("{_start}:{_stop}:{_count}")
+                        })
+                        .collect::<Vec<String>>();
                     merged_target_interval_strings.join(" ")
-                },
-                _ => {
-                    "".to_string()
                 }
+                _ => "".to_string(),
             };
-            
 
             // Get the number of unique reads in the alignments
-            let reads: Vec<String> = targets.iter().map(|interval| interval.val.to_owned()).collect::<Vec<String>>();
+            let reads: Vec<String> = targets
+                .iter()
+                .map(|interval| interval.val.to_owned())
+                .collect::<Vec<String>>();
             let unique_reads = reads.into_iter().unique().collect::<Vec<String>>();
+            
+            coverage_fields.push(
+                CoverageFields {
+                    name: target_name,
+                    regions: target_cov_n as u64,
+                    reads: unique_reads.len() as u64,
+                    alignments: targets.len() as u64,
+                    bases: target_cov_bp as u64,
+                    length: target_seq_len_display,
+                    coverage: target_seq_cov,
+                    tags: tags
+                }
+            );
+        }
 
-            println!("{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}", &target_name, target_cov_n, unique_reads.len(), targets.len(), target_cov_bp, target_seq_len_display, target_seq_cov, tags);
+        Ok(coverage_fields)
+    }
+
+    #[cfg(not(tarpaulin_include))]
+    /// Print the coverage statistics to console, alternatively in pretty table format
+    pub fn to_console(&self, coverage_fields: Vec<CoverageFields>, pretty: bool) -> Result<(), PafFileError>{ 
+        
+        match pretty {
+            true => {
+                let table = Table::new(coverage_fields).with(
+                    Modify::new(Column(7..)).with(MaxWidth::wrapping(32))
+                ).with(Style::modern());
+                println!("{}", table.to_string())
+            },
+            false => {
+                for cov_fields in coverage_fields{
+                    println!(
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
+                        cov_fields.name,
+                        cov_fields.regions,
+                        cov_fields.reads,
+                        cov_fields.alignments,
+                        cov_fields.bases,
+                        cov_fields.length,
+                        cov_fields.coverage,
+                        cov_fields.tags
+                    )
+                }
+            }
         }
 
         Ok(())
+
     }
-    /// Print the target coverage distributions to console in a reduced (approximate) text plot
-    pub fn target_coverage_plots(&self, max_width: u64) -> Result<(), PafFileError>{
-
-
+    
+    #[cfg(not(tarpaulin_include))]
+    /// Print the coverage distributions to console as a text-based coverage plot
+    pub fn coverage_plots(&self, max_width: u64) -> Result<(), PafFileError> {
         println!();
         for (target_name, targets) in self.target_intervals()? {
-
             let target_seq_len = match &self.seq_lengths {
-                None => Some(&0),
-                Some(seqs) => seqs.get(&target_name)
+                None => None,
+                Some(seqs) => seqs.get(&target_name),
             };
-
-           let seq_length = match target_seq_len {
+            let seq_length = match target_seq_len {
                 None => return Err(PafFileError::PafCovPlotSeqLengthError()),
-                Some(value) => *value
+                Some(value) => *value,
             };
 
             let covplot = CovPlot::new(targets, seq_length, max_width)?;
 
             covplot.to_console(target_name, seq_length, Color::Red)?;
-
         }
 
         Ok(())
@@ -195,7 +285,7 @@ impl PafFile {
                     entry.get_mut().push(Interval {
                         start: record.tstart,
                         stop: record.tend,
-                        val: record.qname.clone(),  // add the query read name here for reference, see if it affects performance
+                        val: record.qname.clone(), // add the query read name here for reference, see if it affects performance
                     });
                 }
                 Entry::Vacant(entry) => {
@@ -226,31 +316,31 @@ PAF record struct
 /// PAF record without tags
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-struct PafRecord {
+pub struct PafRecord {
     /// Query sequence name.
-    qname: String,
+    pub qname: String,
     /// Query sequence length.
-    qlen: u64,
+    pub qlen: u64,
     /// Query start (0-based; BED-like; closed).
-    qstart: usize,
+    pub qstart: usize,
     /// Query end (0-based; BED-like; open).
-    qend: usize,
+    pub qend: usize,
     /// Relative strand: "+" or "-".
-    strand: String,
+    pub strand: String,
     /// Target sequence name.
-    tname: String,
+    pub tname: String,
     /// Target sequence length.
-    tlen: u64,
+    pub tlen: u64,
     /// Target start on original strand (0-based).
-    tstart: usize,
+    pub tstart: usize,
     /// Target end on original strand (0-based).
-    tend: usize,
+    pub tend: usize,
     /// Number of matching bases in the mapping.
-    mlen: u64,
+    pub mlen: u64,
     /// Alignment block length. Number of bases, including gaps, in the mapping.
-    blen: u64,
+    pub blen: u64,
     /// Mapping quality (0-255; 255 for missing).
-    mapq: u8,
+    pub mapq: u8,
 }
 
 impl PafRecord {
@@ -315,14 +405,24 @@ mod tests {
         paf_test_str_ok: String,
         // Invalid PAF string, too few fields to parse
         paf_test_str_size_fail: String,
-        // Valid PAF file 
+        // Valid PAF file
         paf_test_file_ok: PathBuf,
         // Valid FASTA file
         paf_test_fasta_ok: PathBuf,
         // Invalid PAF format, record has too few fields
         paf_test_file_record_size_fail: PathBuf,
+        // PAF test alignment intervals for L segment sequence
+        paf_test_intervals_l_segment: Vec<Interval<usize, String>>,
+        // PAF test alignment intervals for S segment sequence
+        paf_test_intervals_s_segment: Vec<Interval<usize, String>>,
+        // PAF test alignment extracted coverage statistics, without reference sequences
+        paf_test_coverage_statistics_no_ref: Vec<CoverageFields>,
+        // PAF test alignment extracted coverage statistics, without reference sequences, without tags (verbosity: 0)
+        paf_test_coverage_statistics_no_ref_no_tags: Vec<CoverageFields>,
+        // PAF test alignment extracted coverage statistics, with reference sequences
+        paf_test_coverage_statistics_ref: Vec<CoverageFields>,
     }
-
+    
     impl TestCases {
         fn new() -> Self {
             Self {
@@ -351,6 +451,83 @@ mod tests {
                 paf_test_file_record_size_fail: PathBuf::from(
                     "tests/cases/test_record_size_fail.paf",
                 ),
+                paf_test_intervals_l_segment: vec![
+                    Interval { start: 1786, stop: 1834, val: "FS10001392:17:BPL20314-1135:1:1113:8980:1660".to_string() }, 
+                    Interval { start: 4538, stop: 4665, val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string() }, 
+                    Interval { start: 4758, stop: 4904, val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string() }
+                ],
+                paf_test_intervals_s_segment: vec![
+                    Interval { start: 1574, stop: 1671, val: "FS10001392:17:BPL20314-1135:1:1108:6180:1130".to_string() }, 
+                    Interval { start: 2188, stop: 2228, val: "FS10001392:17:BPL20314-1135:1:1116:1700:4010".to_string() }
+                ],
+                paf_test_coverage_statistics_no_ref: vec![
+                    CoverageFields {
+                        name: "21172389_LCMV_L-segment_final".to_string(),
+                        regions: 3,
+                        reads: 2,
+                        alignments: 3,
+                        bases: 321,
+                        length: 0,
+                        coverage: 0.,
+                        tags: "1786:1834:1 4538:4665:1 4758:4904:1".to_string()
+
+                    }, CoverageFields {
+                        name: "21172389_LCMV_S-segment_final".to_string(),
+                        regions: 2,
+                        reads: 2,
+                        alignments: 2,
+                        bases: 137,
+                        length: 0,
+                        coverage: 0.,
+                        tags: "1574:1671:1 2188:2228:1".to_string()
+
+                    }
+                ],
+                paf_test_coverage_statistics_no_ref_no_tags: vec![
+                    CoverageFields {
+                        name: "21172389_LCMV_L-segment_final".to_string(),
+                        regions: 3,
+                        reads: 2,
+                        alignments: 3,
+                        bases: 321,
+                        length: 0,
+                        coverage: 0.,
+                        tags: "".to_string()
+                },
+                    CoverageFields {
+                        name: "21172389_LCMV_S-segment_final".to_string(),
+                        regions: 2,
+                        reads: 2,
+                        alignments: 2,
+                        bases: 137,
+                        length: 0,
+                        coverage: 0.,
+                        tags: "".to_string()
+                    }
+                ],
+                paf_test_coverage_statistics_ref: vec![
+                    CoverageFields {
+                        name: "21172389_LCMV_L-segment_final".to_string(),
+                        regions: 3,
+                        reads: 2,
+                        alignments: 3,
+                        bases: 321,
+                        length: 7194,
+                        coverage: 0.044620517097581316,
+                        tags: "1786:1834:1 4538:4665:1 4758:4904:1".to_string()
+
+                    },
+                    CoverageFields {
+                        name: "21172389_LCMV_S-segment_final".to_string(),
+                        regions: 2,
+                        reads: 2,
+                        alignments: 2,
+                        bases: 137,
+                        length: 3407,
+                        coverage: 0.040211329615497504,
+                        tags: "1574:1671:1 2188:2228:1".to_string()
+                    }
+                ],
             }
         }
     }
@@ -377,6 +554,7 @@ mod tests {
         assert_eq!(record.tend, test_cases.paf_test_record_ok.tend);
         assert_eq!(record.mlen, test_cases.paf_test_record_ok.blen);
         assert_eq!(record.mapq, test_cases.paf_test_record_ok.mapq);
+
     }
     #[test]
     fn paf_record_from_str_size_fail() {
@@ -411,7 +589,7 @@ mod tests {
 
     /*
     ====================
-        PafAlignment
+          PafFile
     ====================
     */
 
@@ -440,7 +618,6 @@ mod tests {
         let test_cases = TestCases::new();
         let paf_aln =
             PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
-        println!("{:?}", paf_aln.records);
         assert_eq!(paf_aln.records.len(), 2);
     }
     #[test]
@@ -456,4 +633,99 @@ mod tests {
         let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
         assert_eq!(paf_aln.records.len(), 3);
     }
+
+    #[test]
+    fn paf_parser_create_new_fasta_input_provided_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(
+            test_cases.paf_test_file_ok,
+            Some(test_cases.paf_test_fasta_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+        let mut expected: HashMap<String, u64> = HashMap::new();
+        expected.insert("21172389_LCMV_L-segment_final".to_string(), 7194);
+        expected.insert("21172389_LCMV_S-segment_final".to_string(), 3407);
+        assert_eq!(paf_aln.seq_lengths, Some(expected));
+    }
+
+    #[test]
+    fn paf_parser_create_new_fasta_input_not_provided_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        assert_eq!(paf_aln.seq_lengths, None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn paf_parser_create_new_fasta_input_not_exists_fail() {
+        let test_cases = TestCases::new();
+        let _ = PafFile::from(test_cases.paf_test_file_ok, Some(PathBuf::from("tests/cases/not_exist.fasta")), 0_u64, 0_f64, 0_u8).unwrap();
+    }
+
+    #[test]
+    fn paf_parser_compute_target_intervals_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        let actual = paf_aln.target_intervals().unwrap();
+        let actual_intervals_l = actual[0].1.intervals.clone();
+        let actual_intervals_s = actual[1].1.intervals.clone();
+        assert_eq!(actual_intervals_l, test_cases.paf_test_intervals_l_segment);
+        assert_eq!(actual_intervals_s, test_cases.paf_test_intervals_s_segment);
+    }
+
+    #[test]
+    fn paf_parser_compute_statistics_no_ref_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        assert_eq!(actual_statistics, test_cases.paf_test_coverage_statistics_no_ref);
+    }
+
+    #[test]
+    fn paf_parser_compute_statistics_no_ref_no_tags_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0).unwrap();
+        assert_eq!(actual_statistics, test_cases.paf_test_coverage_statistics_no_ref_no_tags);
+    }
+
+    #[test]
+    // Weird edge case that probably doesn't occur ever, where there is a zero length sequence read from the reference sequence file
+    fn paf_parser_compute_statistics_no_ref_seq_len_zero_ok() {
+        let test_cases = TestCases::new();
+        let mut paf_aln = PafFile::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        paf_aln.seq_lengths = Some(HashMap::from([("21172389_LCMV_L-segment_final".to_string(), 0), ("21172389_LCMV_S-segment_final".to_string(), 0)]));
+        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        assert_eq!(actual_statistics, test_cases.paf_test_coverage_statistics_no_ref);
+    }
+
+    #[test]
+    fn paf_parser_compute_statistics_ref_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln = PafFile::from(test_cases.paf_test_file_ok, Some(test_cases.paf_test_fasta_ok), 0_u64, 0_f64, 0_u8).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        assert_eq!(actual_statistics, test_cases.paf_test_coverage_statistics_ref);
+    }
+
+    #[test]
+    fn tabled_helper_format_coverage_ok() {
+        let expected = display_coverage(&0.333333333);
+        assert_eq!("0.3333", expected);
+    }
+
+    #[test]
+    fn tabled_helper_format_tags_present_ok() {
+        let expected = display_tags(&"test_tags".to_string());
+        assert_eq!("test_tags".to_string(), expected);
+    }
+
+    #[test]
+    fn tabled_helper_format_tags_absent_ok() {
+        let expected = display_tags(&"".to_string());
+        assert_eq!("-".to_string(), expected);
+    }
+
 }
