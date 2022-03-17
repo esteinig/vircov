@@ -13,9 +13,9 @@ Minimal virus genome coverage assessment for metagenomic diagnostics
 
 - [Purpose](#purpose)
 - [Implementation](#implementation)
-- [Concept](#concept)
 - [Install](#install)
 - [Usage](#usage)
+- [Concept](#concept)
 
 ## Purpose
 
@@ -29,10 +29,15 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Install
 
-Cargo:
+```
+git clone https://github.com/esteinig/vircov 
+cd vircov && cargo build --release
+```
+
+## Usage
 
 ```
-cargo install vircov
+vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --pretty --covplot
 ```
 
 ## Concept
