@@ -23,7 +23,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Implementation
 
-`Vircov` is written in Rust and works with `PAF` or `SAM/BAM/CRAM` formatted alignments. It is extremely fast and can assess alignments against thousands (++) of viral referencegenomes in seconds. Basic alignment filters can be used to remove spurious alignments for evaluation. `Vircov` can also print  coverage plots to the terminal for quick visual confirmation and alignment distribution estimates.
+`Vircov` is written in Rust and works with `PAF` or `SAM/BAM/CRAM` formatted alignments. It is extremely fast and can assess alignments against thousands (++) of viral reference genomes in seconds. Basic alignment filters can be used to remove spurious alignments for evaluation. `Vircov` can also print  coverage plots to the terminal for quick visual confirmation and alignment distribution checks.
 
 ## Concept
 
