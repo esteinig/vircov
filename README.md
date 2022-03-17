@@ -12,8 +12,14 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Concept
 
+Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequence depth, large amounts of host reads and low infectious titres, especially in samples like blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. Even where genome coverage is low (e.g. < 20%) positive calls confirmed by orthogonal testing methods (e.g. PCR) often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference. 
+
+De Vries et al. (2021) summarize this concept succinctly in this figure:
 
 
+
+
+Positive calls in these cases can be made from coverage plots showing the distinct alignment regions, but these require visual assessment and may not be suitable for flagging potential hits in automated pipelines and reports. `Vircov` attempts to make inspection and automated flagging easier, by counting the distinct (non-overlapping) coverage regions in an alignment and reporting their number and coverage of the genome to make an educated call without having to generate coverage plots.
 
 
 
