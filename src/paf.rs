@@ -235,14 +235,14 @@ impl PafAlignment {
     pub fn to_console(
         &self,
         coverage_fields: Vec<CoverageFields>,
-        pretty: bool,
+        table: bool,
     ) -> Result<(), PafAlignmentError> {
-        match pretty {
+        match table {
             true => {
-                let table = Table::new(coverage_fields)
+                let _table = Table::new(coverage_fields)
                     .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
                     .with(Style::modern());
-                println!("{}", table)
+                println!("{}", _table)
             }
             false => {
                 for cov_fields in coverage_fields {

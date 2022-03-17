@@ -55,11 +55,11 @@ pub struct Cli {
     ///
     /// Output the coverage statistics as a pretty table.
     #[structopt(short, long)]
-    pub pretty: bool,
+    pub table: bool,
     /// Prints coverage plots
     ///
-    /// Output coverage plots beneath the coverage statistics.
-    #[structopt(short = "t", long)]
+    /// Output coverage plots below the coverage statistics.
+    #[structopt(short = "p", long)]
     pub covplot: bool,
     /// Width of the coverage plots
     ///

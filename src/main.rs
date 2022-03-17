@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     )?;
 
     let data = paf.coverage_statistics(args.verbose)?;
-    paf.to_console(data, args.pretty)?;
+    paf.to_console(data, args.table)?;
 
     match args.covplot {
         true => paf.coverage_plots(args.width)?,
