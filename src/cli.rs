@@ -56,7 +56,7 @@ pub struct Cli {
     /// Output the coverage statistics as a pretty table.
     #[structopt(short, long)]
     pub pretty: bool,
-    /// Prints coverage plots 
+    /// Prints coverage plots
     ///
     /// Output coverage plots beneath the coverage statistics.
     #[structopt(short = "t", long)]
@@ -65,9 +65,8 @@ pub struct Cli {
     ///
     /// Adjusts the (approximate) width of the coverage plots by
     /// computing the bases covered by each coverage segment.
-    #[structopt(short = "w", long, default_value="100")]
-    pub width: u64
-
+    #[structopt(short = "w", long, default_value = "100")]
+    pub width: u64,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
@@ -97,17 +96,15 @@ mod tests {
     #[test]
     #[should_panic]
     fn file_check_not_exist() {
-        check_file_exists(&OsStr::new("tests/cases/no_bueno.paf")).unwrap();
+        check_file_exists(OsStr::new("tests/cases/no_bueno.paf")).unwrap();
     }
 
     #[test]
     fn verbosity_exceeds_limit() {
         let passed_args = vec!["vircov", "-vv", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
-
         let actual = args.unwrap().verbose;
         let expected = 1;
-
         assert_eq!(actual, expected)
     }
 
@@ -115,10 +112,8 @@ mod tests {
     fn valid_verbosity_level() {
         let passed_args = vec!["vircov", "-v", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
-
         let actual = args.unwrap().verbose;
         let expected = 1;
-
         assert_eq!(actual, expected)
     }
 

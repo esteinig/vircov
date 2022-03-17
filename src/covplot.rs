@@ -44,7 +44,7 @@ impl CovPlot {
     ) -> Result<Self, CovPlotError> {
         let segment_length = match width {
             0 => return Err(CovPlotError::WidthError()),
-            _ => (seq_length / (width-1)) as usize,  // make the segments  slighlty larger to account for integer division
+            _ => (seq_length / (width - 1)) as usize, // make the segments  slighlty larger to account for integer division
         };
 
         let segment_intervals = (0..seq_length)
@@ -58,7 +58,7 @@ impl CovPlot {
 
         // For each segment interval, find the merged overlap intervals from the coverage alignment
         // that overlap start .. stop of the segment
-        let mut merged_targets = targets.clone();
+        let mut merged_targets = targets;
         merged_targets.merge_overlaps();
 
         // For each segment interval, use the merged target coverage regions to determine whether they are
@@ -115,8 +115,6 @@ impl CovPlot {
     }
 }
 
-
-
 #[cfg(test)]
 #[cfg(not(tarpaulin_include))]
 mod tests {
@@ -127,15 +125,27 @@ mod tests {
         // PAF test alignment intervals for L segment sequence
         paf_test_intervals_l_segment: Vec<Interval<usize, String>>,
     }
-    
+
     impl TestCases {
         fn new() -> Self {
-            Self { 
+            Self {
                 paf_test_intervals_l_segment: vec![
-                Interval { start: 1786, stop: 1834, val: "FS10001392:17:BPL20314-1135:1:1113:8980:1660".to_string() }, 
-                Interval { start: 4538, stop: 4665, val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string() }, 
-                Interval { start: 4758, stop: 4904, val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string() }
-            ] 
+                    Interval {
+                        start: 1786,
+                        stop: 1834,
+                        val: "FS10001392:17:BPL20314-1135:1:1113:8980:1660".to_string(),
+                    },
+                    Interval {
+                        start: 4538,
+                        stop: 4665,
+                        val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string(),
+                    },
+                    Interval {
+                        start: 4758,
+                        stop: 4904,
+                        val: "FS10001392:17:BPL20314-1135:1:1101:5600:2170".to_string(),
+                    },
+                ],
             }
         }
     }
@@ -146,10 +156,17 @@ mod tests {
         let lapper = Lapper::new(test_cases.paf_test_intervals_l_segment);
         let covplot = CovPlot::new(lapper, 7194, 100).unwrap();
 
-        let _covered = covplot.segments.iter().filter(|x|x.val > 0).collect::<Vec<&Interval<usize, u64>>>().len();
+        let _covered = covplot.segments.iter().filter(|x| x.val > 0).count();
 
         assert_eq!(covplot.segments.len(), 100);
-        assert_eq!(covplot.segments[0], Interval { start: 0, stop: 72, val: 0 });
+        assert_eq!(
+            covplot.segments[0],
+            Interval {
+                start: 0,
+                stop: 72,
+                val: 0
+            }
+        );
         assert_eq!(_covered, 7)
     }
 
@@ -160,5 +177,4 @@ mod tests {
         let lapper = Lapper::new(test_cases.paf_test_intervals_l_segment);
         let _ = CovPlot::new(lapper, 7194, 0).unwrap();
     }
-
 }

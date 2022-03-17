@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     paf.to_console(data, args.pretty)?;
 
     match args.covplot {
-        true => paf.coverage_plots(args.width)?, 
+        true => paf.coverage_plots(args.width)?,
         false => {}
     }
 
