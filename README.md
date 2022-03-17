@@ -19,7 +19,7 @@ De Vries et al. (2021) summarize this concept succinctly in this figure:
 
 
 
-Positive calls in these cases can be made from coverage plots showing the distinct alignment regions, but these require visual assessment and may not be suitable for flagging potential hits in automated pipelines and reports. `Vircov` attempts to make inspection and automated flagging easier, by counting the distinct (non-overlapping) coverage regions in an alignment and reporting their number and coverage of the genome to make an educated call without having to generate coverage plots.
+Positive calls in these cases can be made from coverage plots showing the distinct alignment regions, but these require visual assessment and may not be suitable for flagging potential hits in automated pipelines and reports. `Vircov` attempts to make inspection and automated flagging easier, by counting the distinct (non-overlapping) coverage regions in an alignment and reporting some helpful statistics to make an educated call without having to generate coverage plots.
 
 
 
