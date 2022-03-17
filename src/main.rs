@@ -2,7 +2,7 @@ use anyhow::Result;
 use structopt::StructOpt;
 
 use crate::cli::Cli;
-use crate::paf::PafFile;
+use crate::paf::PafAlignment;
 
 mod cli;
 mod covplot;
@@ -16,7 +16,7 @@ mod paf;
 fn main() -> Result<()> {
     let args = Cli::from_args();
 
-    let paf = PafFile::from(
+    let paf = PafAlignment::from(
         args.path,
         args.fasta,
         args.min_len,
