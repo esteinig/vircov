@@ -2,14 +2,14 @@
 
 [![build](https://github.com/esteinig/nanoq/actions/workflows/rust-ci.yaml/badge.svg?branch=master)](https://github.com/esteinig/nanoq/actions/workflows/rust-ci.yaml)
 [![codecov](https://codecov.io/gh/esteinig/vircov/branch/main/graph/badge.svg?token=RG95F4C6FE)](https://codecov.io/gh/esteinig/vircov)
-![](https://img.shields.io/badge/version-0.3.0-black.svg)
+![](https://img.shields.io/badge/version-0.4.0-black.svg)
 
 Minimal virus genome coverage assessment for metagenomic diagnostics
 
 ## Overview
 
 
-**`v0.3.0`**
+**`v0.4.0`**
 
 - [Purpose](#purpose)
 - [Implementation](#implementation)
@@ -50,6 +50,6 @@ Definitive viral diagnosis from metagenomic clinical samples can be extremely ch
 
 Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold on the number of regions is chosen by the authors (> 3). However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
 
-`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reporting some helpful statistics to make an educated call without having to generate coverage plots. 
+`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call without having to generate coverage plots. 
 
 
