@@ -24,7 +24,8 @@ fn main() -> Result<()> {
         args.min_mapq,
     )?;
 
-    let data = paf.coverage_statistics(args.verbose)?;
+    println!("{} {}", args.cov_reg, args.seq_len);
+    let data = paf.coverage_statistics(args.cov_reg, args.seq_len, args.verbose)?;
     paf.to_console(data, args.table)?;
 
     match args.covplot {

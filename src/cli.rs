@@ -15,9 +15,9 @@ pub struct Cli {
     pub path: PathBuf,
     /// Reference sequences in FASTA format
     ///
-    /// If the input are alignments in PAF format, computation of the
-    /// total coverage against each target sequence requires the sequence
-    /// lengths extracted from the FASTA file used in the alignment.
+    /// If the input format is PAF, computation of the total coverage 
+    /// against each target sequence requires sequence lengths. Should
+    /// be the same reference file as used for the alignment.
     #[structopt(
         short = "f",
         long = "fasta", 
@@ -54,19 +54,32 @@ pub struct Cli {
     /// Pretty print output table  
     ///
     /// Output the coverage statistics as a pretty table.
-    #[structopt(short, long)]
+    #[structopt(short = "t", long = "table")]
     pub table: bool,
     /// Prints coverage plots
     ///
     /// Output coverage plots below the coverage statistics.
-    #[structopt(short = "p", long)]
+    #[structopt(short = "p", long = "cov-plot")]
     pub covplot: bool,
-    /// Width of the coverage plots
+    /// Width of coverage plots
     ///
     /// Adjusts the (approximate) width of the coverage plots by
     /// computing the bases covered by each coverage segment.
-    #[structopt(short = "w", long, default_value = "100")]
+    #[structopt(short = "w", long = "width", default_value = "100")]
     pub width: u64,
+    /// Minimum reference sequence length
+    ///
+    /// Filters results by minimum reference sequence length
+    /// which can help remove small gene alignment in large
+    /// databases (e.g. reduce outpout to whole genome mappings)
+    #[structopt(short = "s", long = "seq-len", default_value = "0")]
+    pub seq_len: u64,
+    /// Minimum coverage regions
+    /// 
+    /// Filters results by a minimum count of coverage regions, the
+    /// primary output to determine a positive hit.
+    #[structopt(short = "r", long = "cov-reg", default_value = "0")]
+    pub cov_reg: u64,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {

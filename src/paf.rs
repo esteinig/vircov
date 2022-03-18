@@ -160,12 +160,14 @@ impl PafAlignment {
     /// Compute coverage distribution by target sequence
     pub fn coverage_statistics(
         &self,
+        cov_reg: u64,
+        seq_len: u64,
         verbosity: u64,
     ) -> Result<Vec<CoverageFields>, PafAlignmentError> {
         let mut coverage_fields: Vec<CoverageFields> = Vec::new();
         for (target_name, targets) in self.target_intervals()? {
             // Bases of target sequence covered
-            let target_cov_bp = targets.cov();
+            let target_cov_bp = targets.cov() as u64;
 
             let target_seq_len = match &self.seq_lengths {
                 None => None,
@@ -186,7 +188,7 @@ impl PafAlignment {
             let mut merged_targets = targets.clone();
             merged_targets.merge_overlaps();
 
-            let target_cov_n = merged_targets.intervals.len();
+            let target_cov_n = merged_targets.intervals.len() as u64;
 
             let tags = match verbosity {
                 1 => {
@@ -214,17 +216,21 @@ impl PafAlignment {
                 .map(|interval| interval.val.to_owned())
                 .unique()
                 .count() as u64;
+            
 
-            coverage_fields.push(CoverageFields {
-                name: target_name,
-                regions: target_cov_n as u64,
-                reads: unique_reads,
-                alignments: targets.len() as u64,
-                bases: target_cov_bp as u64,
-                length: target_seq_len_display,
-                coverage: target_seq_cov,
-                tags,
-            });
+
+            if target_seq_len_display >= seq_len && target_cov_n >= cov_reg {
+                coverage_fields.push(CoverageFields {
+                    name: target_name,
+                    regions: target_cov_n,
+                    reads: unique_reads,
+                    alignments: targets.len() as u64,
+                    bases: target_cov_bp,
+                    length: target_seq_len_display,
+                    coverage: target_seq_cov,
+                    tags,
+                });
+            }
         }
 
         Ok(coverage_fields)
@@ -719,7 +725,7 @@ mod tests {
         let test_cases = TestCases::new();
         let paf_aln =
             PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
-        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_no_ref
@@ -731,7 +737,7 @@ mod tests {
         let test_cases = TestCases::new();
         let paf_aln =
             PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
-        let actual_statistics = paf_aln.coverage_statistics(0).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 0).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_no_ref_no_tags
@@ -748,7 +754,7 @@ mod tests {
             ("21172389_LCMV_L-segment_final".to_string(), 0),
             ("21172389_LCMV_S-segment_final".to_string(), 0),
         ]));
-        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_no_ref
@@ -766,7 +772,7 @@ mod tests {
             0_u8,
         )
         .unwrap();
-        let actual_statistics = paf_aln.coverage_statistics(1).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_ref
