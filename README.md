@@ -27,9 +27,10 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 `Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
+
 ## Install
 
-```
+```bash
 git clone https://github.com/esteinig/vircov 
 cd vircov && cargo build --release
 ```
@@ -37,7 +38,14 @@ cd vircov && cargo build --release
 ## Usage
 
 ```
-vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table --covplot
+vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table --cov-reg
+```
+
+## Tests
+
+```bash
+git clone https://github.com/esteinig/vircov 
+cd vircov && cargo test && cargo tarpaulin 
 ```
 
 ## Concept
@@ -53,3 +61,11 @@ Positive calls in these cases can be made from coverage plots showing the distin
 `Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call without having to generate coverage plots. 
 
 
+## Examples
+
+```
+```
+
+## Etymology
+
+Not a very creative abbreviation of virus coverage but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. `Vircov` is pronounced somewhat similarly to his surname, if you mumble the sharp `v` at the end.
