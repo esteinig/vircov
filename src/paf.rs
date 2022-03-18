@@ -216,8 +216,6 @@ impl PafAlignment {
                 .map(|interval| interval.val.to_owned())
                 .unique()
                 .count() as u64;
-            
-
 
             if target_seq_len_display >= seq_len && target_cov_n >= cov_reg {
                 coverage_fields.push(CoverageFields {

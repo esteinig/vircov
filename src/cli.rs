@@ -15,7 +15,7 @@ pub struct Cli {
     pub path: PathBuf,
     /// Reference sequences in FASTA format
     ///
-    /// If the input format is PAF, computation of the total coverage 
+    /// If the input format is PAF, computation of the total coverage
     /// against each target sequence requires sequence lengths. Should
     /// be the same reference file as used for the alignment.
     #[structopt(
@@ -75,7 +75,7 @@ pub struct Cli {
     #[structopt(short = "s", long = "seq-len", default_value = "0")]
     pub seq_len: u64,
     /// Minimum coverage regions
-    /// 
+    ///
     /// Filters results by a minimum count of coverage regions, the
     /// primary output to determine a positive hit.
     #[structopt(short = "r", long = "cov-reg", default_value = "0")]
