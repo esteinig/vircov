@@ -68,4 +68,4 @@ Positive calls in these cases can be made from coverage plots showing the distin
 
 ## Etymology
 
-Not a very creative abbreviation of virus coverage but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. `Vircov` is pronounced somewhat similarly to his surname if you mumble the sharp "v" at the end.
+Not a very creative abbreviation of virus coverage but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. `Vircov` is pronounced somewhat similarly to his German surname if you mumble the sharp "v" at the end.
