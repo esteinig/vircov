@@ -66,6 +66,19 @@ Positive calls in these cases can be made from coverage plots showing the distin
 ```
 ```
 
+## Performance
+
+Alignments with `minimap2`:
+
+* **Sample 1**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
+* **Sample 2**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 63 million alignments 
+
+`.paf`
+    
+  * **Sample 1** (212 MB): 0.78 seconds, peak memory usage 12 MB
+  * **Sample 2** (8.9 GB): 54.3 seconds, peak memory usage 2.9 GB
+
+
 ## Etymology
 
 Not a very creative abbreviation of virus coverage but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. His German surname is pronounced somewhat like `vircov` if you mumble the terminal "v".
