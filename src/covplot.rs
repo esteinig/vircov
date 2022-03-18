@@ -44,7 +44,7 @@ impl CovPlot {
     ) -> Result<Self, CovPlotError> {
         let segment_length = match width {
             0 => return Err(CovPlotError::WidthError()),
-            _ => (seq_length / (width - 1)) as usize, // make the segments  slighlty larger to account for integer division
+            _ => (seq_length / (width - 1)) as usize, // make the segments slightly larger to account for integer division
         };
 
         let segment_intervals = (0..seq_length)
@@ -87,7 +87,7 @@ impl CovPlot {
     // Prints the segmented coverage plot
     pub fn to_console(
         &self,
-        seq_name: &String,
+        seq_name: &str,
         seq_length: u64,
         coverage_color: Color,
     ) -> Result<(), CovPlotError> {

@@ -127,7 +127,7 @@ impl PafAlignment {
         let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
 
         for line in paf_file.lines() {
-            let record = PafRecord::from_str(line?)?;
+            let record = PafMiniRecord::from_str(line?)?;
             if record.query_aligned_length()? >= min_qaln_len
                 && record.query_coverage()? >= min_qaln_cov
                 && record.mapq >= min_mapq
@@ -260,7 +260,7 @@ impl PafAlignment {
     /// Print the coverage statistics to console, alternatively in pretty table format
     pub fn to_console(
         &self,
-        coverage_fields: &Vec<CoverageFields>,
+        coverage_fields: &[CoverageFields],
         table: bool,
     ) -> Result<(), PafAlignmentError> {
         match table {
@@ -292,9 +292,10 @@ impl PafAlignment {
 
     #[cfg(not(tarpaulin_include))]
     /// Print the coverage distributions to console as a text-based coverage plot
-    pub fn coverage_plots(&self, 
-        coverage_fields: &Vec<CoverageFields>,
-        max_width: u64
+    pub fn coverage_plots(
+        &self,
+        coverage_fields: &[CoverageFields],
+        max_width: u64,
     ) -> Result<(), PafAlignmentError> {
         println!();
         for (target_name, targets) in &self.target_intervals {
@@ -307,9 +308,11 @@ impl PafAlignment {
                 Some(value) => *value,
             };
 
-            let _pass = coverage_fields.iter().map(|x| x.name.clone()).collect::<Vec<String>>(); 
-            
-            if _pass.contains(target_name){
+            if coverage_fields
+                .iter()
+                .map(|x| x.name.clone())
+                .any(|x| x == *target_name)
+            {
                 let covplot = CovPlot::new(targets, seq_length, max_width)?;
                 covplot.to_console(target_name, seq_length, Color::Red)?;
             }
@@ -317,7 +320,6 @@ impl PafAlignment {
 
         Ok(())
     }
-
 }
 
 /*
@@ -328,8 +330,7 @@ PAF record
 
 /// PAF record without tags
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct PafRecord {
+pub struct PafMiniRecord {
     /// Query sequence name.
     pub qname: String,
     /// Query sequence length.
@@ -339,24 +340,16 @@ pub struct PafRecord {
     /// Query end (0-based; BED-like; open).
     pub qend: usize,
     /// Relative strand: "+" or "-".
-    pub strand: String,
-    /// Target sequence name.
     pub tname: String,
     /// Target sequence length.
-    pub tlen: u64,
-    /// Target start on original strand (0-based).
     pub tstart: usize,
     /// Target end on original strand (0-based).
     pub tend: usize,
-    /// Number of matching bases in the mapping.
-    pub mlen: u64,
-    /// Alignment block length. Number of bases, including gaps, in the mapping.
-    pub blen: u64,
     /// Mapping quality (0-255; 255 for missing).
     pub mapq: u8,
 }
 
-impl PafRecord {
+impl PafMiniRecord {
     /// Populate a record from a record string, includes some error checks
     pub fn from_str(paf_str: String) -> Result<Self, PafRecordError> {
         let fields: Vec<&str> = paf_str.split('\t').collect();
@@ -370,13 +363,9 @@ impl PafRecord {
             qlen: fields[1].parse::<u64>()?,
             qstart: fields[2].parse::<usize>()?,
             qend: fields[3].parse::<usize>()?,
-            strand: fields[4].to_string(),
             tname: fields[5].to_string(),
-            tlen: fields[6].parse::<u64>()?,
             tstart: fields[7].parse::<usize>()?,
             tend: fields[8].parse::<usize>()?,
-            mlen: fields[9].parse::<u64>()?,
-            blen: fields[10].parse::<u64>()?,
             mapq: fields[11].parse::<u8>()?,
         };
 
@@ -413,7 +402,7 @@ mod tests {
 
     struct TestCases {
         // Valid PAF record struct instance
-        paf_test_record_ok: PafRecord,
+        paf_test_record_ok: PafMiniRecord,
         // Valid PAF string, sufficient fields to parse
         paf_test_str_ok: String,
         // Invalid PAF string, too few fields to parse
@@ -439,18 +428,14 @@ mod tests {
     impl TestCases {
         fn new() -> Self {
             Self {
-                paf_test_record_ok: PafRecord {
+                paf_test_record_ok: PafMiniRecord {
                     qname: "query".to_string(),
                     qlen: 4,
                     qstart: 400,
                     qend: 404,
-                    strand: "+".to_string(),
                     tname: "target".to_string(),
-                    tlen: 5,
                     tstart: 500,
                     tend: 504,
-                    mlen: 4,
-                    blen: 4,
                     mapq: 60,
                 },
                 paf_test_str_ok: String::from(
@@ -572,38 +557,35 @@ mod tests {
     #[test]
     fn paf_record_from_str_ok() {
         let test_cases = TestCases::new();
-        let record = PafRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
 
         assert_eq!(record.qname, test_cases.paf_test_record_ok.qname);
         assert_eq!(record.qlen, test_cases.paf_test_record_ok.qlen);
         assert_eq!(record.qstart, test_cases.paf_test_record_ok.qstart);
         assert_eq!(record.qend, test_cases.paf_test_record_ok.qend);
-        assert_eq!(record.strand, test_cases.paf_test_record_ok.strand);
         assert_eq!(record.tname, test_cases.paf_test_record_ok.tname);
-        assert_eq!(record.tlen, test_cases.paf_test_record_ok.tlen);
         assert_eq!(record.tstart, test_cases.paf_test_record_ok.tstart);
         assert_eq!(record.tend, test_cases.paf_test_record_ok.tend);
-        assert_eq!(record.mlen, test_cases.paf_test_record_ok.blen);
         assert_eq!(record.mapq, test_cases.paf_test_record_ok.mapq);
     }
     #[test]
     fn paf_record_from_str_size_fail() {
         let test_cases = TestCases::new();
-        let actual_error = PafRecord::from_str(test_cases.paf_test_str_size_fail).unwrap_err();
+        let actual_error = PafMiniRecord::from_str(test_cases.paf_test_str_size_fail).unwrap_err();
         let expected_error = PafRecordError::RecordSize();
         assert_eq!(actual_error, expected_error);
     }
     #[test]
     fn paf_record_query_aligned_length_ok() {
         let test_cases = TestCases::new();
-        let record = PafRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
         let test_length = record.query_aligned_length().unwrap();
         assert_eq!(test_length, 4_u64);
     }
     #[test]
     fn paf_record_query_coverage_ok() {
         let test_cases = TestCases::new();
-        let record = PafRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
         let query_coverage = record.query_coverage().unwrap();
         float_eq!(query_coverage, 1_f64, abs <= f64::EPSILON);
     }
@@ -611,7 +593,7 @@ mod tests {
     #[test]
     fn paf_record_query_coverage_zero_division_ok() {
         let test_cases = TestCases::new();
-        let mut record = PafRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+        let mut record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
         record.qlen = 0;
         let zero_length = record.query_coverage().unwrap();
         float_eq!(zero_length, 0_f64, abs <= f64::EPSILON);
@@ -638,27 +620,29 @@ mod tests {
         .unwrap();
     }
 
-    // #[test]
-    // fn paf_parser_create_new_filter_mapq_ok() {
-    //     let test_cases = TestCases::new();
-    //     let paf_aln =
-    //         PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
-    //     assert_eq!(paf_aln.records.len(), 2);
-    // }
-    // #[test]
-    // fn paf_parser_create_new_filter_min_len_ok() {
-    //     let test_cases = TestCases::new();
-    //     let paf_aln =
-    //         PafAlignment::from(test_cases.paf_test_file_ok, None, 50_u64, 0_f64, 0_u8).unwrap();
-    //     assert_eq!(paf_aln.records.len(), 3);
-    // }
-    // #[test]
-    // fn paf_parser_create_new_filter_min_cov_ok() {
-    //     let test_cases = TestCases::new();
-    //     let paf_aln =
-    //         PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
-    //     assert_eq!(paf_aln.records.len(), 3);
-    // }
+    #[test]
+    fn paf_parser_create_new_filter_mapq_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln =
+            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
+        assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
+    }
+    #[test]
+    fn paf_parser_create_new_filter_min_len_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln =
+            PafAlignment::from(test_cases.paf_test_file_ok, None, 50_u64, 0_f64, 0_u8).unwrap();
+        assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
+        assert_eq!(paf_aln.target_intervals[1].1.len(), 1);
+    }
+    #[test]
+    fn paf_parser_create_new_filter_min_cov_ok() {
+        let test_cases = TestCases::new();
+        let paf_aln =
+            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
+        assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
+        assert_eq!(paf_aln.target_intervals[1].1.len(), 1);
+    }
 
     #[test]
     fn paf_parser_create_new_fasta_input_provided_ok() {
