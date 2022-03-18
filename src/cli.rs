@@ -76,8 +76,8 @@ pub struct Cli {
     pub seq_len: u64,
     /// Minimum coverage regions
     ///
-    /// Filters results by a minimum count of coverage regions, the
-    /// primary output to determine a positive hit.
+    /// Filters results by a minimum number of coverage regions, the
+    /// primary output to determine a positive hit
     #[structopt(short = "r", long = "cov-reg", default_value = "0")]
     pub cov_reg: u64,
 }

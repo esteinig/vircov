@@ -38,7 +38,7 @@ impl CovPlot {
     /// computes the conversions from sequence
     /// to output string
     pub fn new(
-        targets: Lapper<usize, String>,
+        targets: &Lapper<usize, String>,
         seq_length: u64,
         width: u64,
     ) -> Result<Self, CovPlotError> {
@@ -58,7 +58,7 @@ impl CovPlot {
 
         // For each segment interval, find the merged overlap intervals from the coverage alignment
         // that overlap start .. stop of the segment
-        let mut merged_targets = targets;
+        let mut merged_targets = targets.clone();
         merged_targets.merge_overlaps();
 
         // For each segment interval, use the merged target coverage regions to determine whether they are
@@ -87,7 +87,7 @@ impl CovPlot {
     // Prints the segmented coverage plot
     pub fn to_console(
         &self,
-        seq_name: String,
+        seq_name: &String,
         seq_length: u64,
         coverage_color: Color,
     ) -> Result<(), CovPlotError> {
@@ -154,7 +154,7 @@ mod tests {
     fn covplot_create_new_ok() {
         let test_cases = TestCases::new();
         let lapper = Lapper::new(test_cases.paf_test_intervals_l_segment);
-        let covplot = CovPlot::new(lapper, 7194, 100).unwrap();
+        let covplot = CovPlot::new(&lapper, 7194, 100).unwrap();
 
         let _covered = covplot.segments.iter().filter(|x| x.val > 0).count();
 
@@ -175,6 +175,6 @@ mod tests {
     fn covplot_create_new_width_fail() {
         let test_cases = TestCases::new();
         let lapper = Lapper::new(test_cases.paf_test_intervals_l_segment);
-        let _ = CovPlot::new(lapper, 7194, 0).unwrap();
+        let _ = CovPlot::new(&lapper, 7194, 0).unwrap();
     }
 }
