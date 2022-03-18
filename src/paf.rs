@@ -112,6 +112,7 @@ pub struct PafAlignment {
 impl PafAlignment {
     // Parse alignments from file without filtering
     pub fn from(
+        // Path to alignment file
         path: PathBuf,
         // Reference sequence fasta
         fasta: Option<PathBuf>,
