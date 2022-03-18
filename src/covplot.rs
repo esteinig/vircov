@@ -63,9 +63,9 @@ impl CovPlot {
 
         // For each segment interval, use the merged target coverage regions to determine whether they are
         // contained within the segment interval:
-        //      0 indicates it is not contained
-        //      1 indicates it is contained
-        //      2 indicates a coundary between two merged target regions
+        //      == 0 indicates merged target region is not contained in segment
+        //      == 1 indicates merged target region is contained in segment
+        //      >= 2 indicates one or multiple boundaries between merged target regions in segment
         let tagged_segments = segment_intervals
             .iter()
             .map(|x| {
