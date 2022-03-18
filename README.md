@@ -23,9 +23,9 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Implementation
 
-`Vircov` is written in Rust and works with alignments in the standard formats `PAF` or `SAM/BAM/CRAM`. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments. Text-based coverage plots can be printed to the terminal for visual confirmation.
+`Vircov` is written in Rust and works with alignments in the standard `PAF` or `SAM/BAM/CRAM` (next release) formats. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments, and text-style coverage plots can be printed to the terminal for visual inspection.
 
-`Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in `META-GP` (Australia). As such, it is meant to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
+`Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
 ## Install
 
@@ -42,7 +42,7 @@ vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table --
 
 ## Concept
 
-Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. Even where only few reads map to the reference and where genome coverage is therefore low (e.g. < 20%) positive calls often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
+Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. When only few reads map to the reference and when genome coverage is therefore low, positive infections often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
 
 [De Vries et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1386653221000792) summarize this concept succinctly in this figure (adapted):
 
