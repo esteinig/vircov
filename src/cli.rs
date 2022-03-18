@@ -67,19 +67,19 @@ pub struct Cli {
     /// computing the bases covered by each coverage segment.
     #[structopt(short = "w", long = "width", default_value = "100")]
     pub width: u64,
-    /// Minimum reference sequence length
+    /// Minimum reference sequence length 
     ///
     /// Filters results by minimum reference sequence length
     /// which can help remove small gene alignment in large
     /// databases (e.g. reduce outpout to whole genome mappings)
     #[structopt(short = "s", long = "seq-len", default_value = "0")]
     pub seq_len: u64,
-    /// Minimum coverage regions
+    /// Minimum number of coverage regions
     ///
     /// Filters results by a minimum number of coverage regions, the
     /// primary output to determine a positive hit
-    #[structopt(short = "r", long = "cov-reg", default_value = "0")]
-    pub cov_reg: u64,
+    #[structopt(short = "r", long = "regions", default_value = "0")]
+    pub regions: u64,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
