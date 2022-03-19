@@ -4,10 +4,11 @@ use crossterm::style::Color;
 use itertools::Itertools;
 use noodles::fasta;
 use rust_lapper::{Interval, Lapper};
+use serde::Deserialize;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::PathBuf;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
@@ -25,25 +26,15 @@ pub enum PafAlignmentError {
     /// Indicates failure to read file
     #[error("failed to read file")]
     FileIO(#[from] std::io::Error),
-    /// Indicates failure to read a line into record
-    #[error("failed to parse record")]
-    Record(#[from] PafRecordError),
     /// Indicates a failure to get sequence length require for coverage plots
     #[error("failed to get sequence length for coverage plot")]
     CovPlotSeqLength(),
     /// Indicates failure with the coverage plot module
     #[error("failed to generate data for coverage plot")]
     CovPlot(#[from] crate::covplot::CovPlotError),
-}
-
-#[derive(Error, Debug, PartialEq)]
-pub enum PafRecordError {
-    /// Indicates failure to parse a record due to insufficient fields
-    #[error("record has too few fields")]
-    RecordSize(),
-    /// Indicates failure to parse an integer from a record string
-    #[error("failed to parse an integer field")]
-    RecordInteger(#[from] std::num::ParseIntError),
+    /// Indicates failure to parse and deserialize a record
+    #[error("failed to parse a record from alignment")]
+    CSVRecord(#[from] csv::Error),
 }
 
 /*
@@ -123,14 +114,18 @@ impl PafAlignment {
         // Minimum mapping quality
         min_mapq: u8,
     ) -> Result<Self, PafAlignmentError> {
-        let paf_file = File::open(path).map(BufReader::new)?;
+        let paf_file = File::open(path)?;
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .delimiter(b'\t')
+            .from_reader(paf_file);
 
         let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
 
-        for line in paf_file.lines() {
-            let record = PafMiniRecord::from_str(line?)?;
-            if record.query_aligned_length()? >= min_qaln_len
-                && record.query_coverage()? >= min_qaln_cov
+        for result in reader.deserialize() {
+            let record: PafRecord = result?;
+            if record.query_aligned_length() >= min_qaln_len
+                && record.query_coverage() >= min_qaln_cov
                 && record.mapq >= min_mapq
             {
                 match target_intervals.entry(record.tname.clone()) {
@@ -330,8 +325,8 @@ PAF record
 */
 
 /// PAF record without tags
-#[derive(Debug, Clone)]
-pub struct PafMiniRecord {
+#[derive(Debug, Clone, Deserialize)]
+pub struct PafRecord {
     /// Query sequence name.
     pub qname: String,
     /// Query sequence length.
@@ -341,47 +336,33 @@ pub struct PafMiniRecord {
     /// Query end (0-based; BED-like; open).
     pub qend: usize,
     /// Relative strand: "+" or "-".
+    pub strand: String,
+    /// Target sequence name.
     pub tname: String,
     /// Target sequence length.
+    pub tlen: u64,
+    /// Target start on original strand (0-based).
     pub tstart: usize,
     /// Target end on original strand (0-based).
     pub tend: usize,
+    /// Number of matching bases in the mapping.
+    pub mlen: u64,
+    /// Alignment block length. Number of bases, including gaps, in the mapping.
+    pub blen: u64,
     /// Mapping quality (0-255; 255 for missing).
     pub mapq: u8,
 }
 
-impl PafMiniRecord {
-    /// Populate a record from a record string, includes some error checks
-    pub fn from_str(paf_str: String) -> Result<Self, PafRecordError> {
-        let fields: Vec<&str> = paf_str.split('\t').collect();
-
-        if fields.len() < 12 {
-            return Err(PafRecordError::RecordSize());
-        }
-
-        let record = Self {
-            qname: fields[0].to_string(),
-            qlen: fields[1].parse::<u64>()?,
-            qstart: fields[2].parse::<usize>()?,
-            qend: fields[3].parse::<usize>()?,
-            tname: fields[5].to_string(),
-            tstart: fields[7].parse::<usize>()?,
-            tend: fields[8].parse::<usize>()?,
-            mapq: fields[11].parse::<u8>()?,
-        };
-
-        Ok(record)
-    }
+impl PafRecord {
     /// Length of the aligned query sequence.
-    pub fn query_aligned_length(&self) -> Result<u64, PafRecordError> {
-        let aln_length = (self.qend - self.qstart) as u64;
-        Ok(aln_length)
+    pub fn query_aligned_length(&self) -> u64 {
+        (self.qend - self.qstart) as u64
     }
     /// Coverage of the aligned query sequence.
-    pub fn query_coverage(&self) -> Result<f64, PafRecordError> {
+    pub fn query_coverage(&self) -> f64 {
         match self.qlen == 0 {
-            true => Ok(0f64),
-            false => Ok(self.query_aligned_length()? as f64 / self.qlen as f64),
+            true => 0f64,
+            false => self.query_aligned_length() as f64 / self.qlen as f64,
         }
     }
 }
@@ -390,10 +371,8 @@ impl PafMiniRecord {
 #[cfg(not(tarpaulin_include))]
 mod tests {
 
-    use float_eq::float_eq;
-    use std::path::PathBuf;
-
     use super::*;
+    use std::path::PathBuf;
 
     /*
     ===============
@@ -402,12 +381,8 @@ mod tests {
     */
 
     struct TestCases {
-        // Valid PAF record struct instance
-        paf_test_record_ok: PafMiniRecord,
-        // Valid PAF string, sufficient fields to parse
-        paf_test_str_ok: String,
-        // Invalid PAF string, too few fields to parse
-        paf_test_str_size_fail: String,
+        // Valid PafRecord
+        paf_record_ok: PafRecord,
         // Valid PAF file
         paf_test_file_ok: PathBuf,
         // Valid FASTA file
@@ -429,22 +404,20 @@ mod tests {
     impl TestCases {
         fn new() -> Self {
             Self {
-                paf_test_record_ok: PafMiniRecord {
+                paf_record_ok: PafRecord {
                     qname: "query".to_string(),
                     qlen: 4,
                     qstart: 400,
                     qend: 404,
+                    strand: "+".to_string(),
                     tname: "target".to_string(),
+                    tlen: 5,
                     tstart: 500,
                     tend: 504,
+                    mlen: 4,
+                    blen: 4,
                     mapq: 60,
                 },
-                paf_test_str_ok: String::from(
-                    "query\t4\t400\t404\t+\ttarget\t5\t500\t504\t4\t4\t60",
-                ),
-                paf_test_str_size_fail: String::from(
-                    "query\t4\t400\t404\t+\ttarget\t5\t500\t504\t4\t4",
-                ),
                 paf_test_file_ok: PathBuf::from("tests/cases/test_ok.paf"),
                 paf_test_fasta_ok: PathBuf::from("tests/cases/test_ok.fasta"),
                 paf_test_file_record_size_fail: PathBuf::from(
@@ -548,64 +521,23 @@ mod tests {
             }
         }
     }
-
-    /*
-    ===============
-       PafRecord
-    ===============
-    */
-
-    #[test]
-    fn paf_record_from_str_ok() {
-        let test_cases = TestCases::new();
-        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
-
-        assert_eq!(record.qname, test_cases.paf_test_record_ok.qname);
-        assert_eq!(record.qlen, test_cases.paf_test_record_ok.qlen);
-        assert_eq!(record.qstart, test_cases.paf_test_record_ok.qstart);
-        assert_eq!(record.qend, test_cases.paf_test_record_ok.qend);
-        assert_eq!(record.tname, test_cases.paf_test_record_ok.tname);
-        assert_eq!(record.tstart, test_cases.paf_test_record_ok.tstart);
-        assert_eq!(record.tend, test_cases.paf_test_record_ok.tend);
-        assert_eq!(record.mapq, test_cases.paf_test_record_ok.mapq);
-    }
-    #[test]
-    fn paf_record_from_str_size_fail() {
-        let test_cases = TestCases::new();
-        let actual_error = PafMiniRecord::from_str(test_cases.paf_test_str_size_fail).unwrap_err();
-        let expected_error = PafRecordError::RecordSize();
-        assert_eq!(actual_error, expected_error);
-    }
     #[test]
     fn paf_record_query_aligned_length_ok() {
         let test_cases = TestCases::new();
-        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
-        let test_length = record.query_aligned_length().unwrap();
-        assert_eq!(test_length, 4_u64);
+        assert_eq!(test_cases.paf_record_ok.query_aligned_length(), 4)
     }
     #[test]
     fn paf_record_query_coverage_ok() {
         let test_cases = TestCases::new();
-        let record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
-        let query_coverage = record.query_coverage().unwrap();
-        float_eq!(query_coverage, 1_f64, abs <= f64::EPSILON);
+        assert_eq!(test_cases.paf_record_ok.query_coverage(), 1.0_f64)
     }
-
     #[test]
-    fn paf_record_query_coverage_zero_division_ok() {
+    fn paf_record_query_coverage_zero_len_ok() {
         let test_cases = TestCases::new();
-        let mut record = PafMiniRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+        let mut record = test_cases.paf_record_ok;
         record.qlen = 0;
-        let zero_length = record.query_coverage().unwrap();
-        float_eq!(zero_length, 0_f64, abs <= f64::EPSILON);
+        assert_eq!(record.query_coverage(), 0_f64)
     }
-
-    /*
-    ====================
-          PafFile
-    ====================
-    */
-
     #[test]
     #[should_panic]
     fn paf_parser_create_new_record_size_fail() {

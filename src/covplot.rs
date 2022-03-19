@@ -1,10 +1,9 @@
 use anyhow::Result;
-use rust_lapper::{Interval, Lapper};
-use thiserror::Error;
-
 use crossterm::execute;
 use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
+use rust_lapper::{Interval, Lapper};
 use std::io::stdout;
+use thiserror::Error;
 
 /*
 ========================
