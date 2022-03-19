@@ -1,12 +1,12 @@
 use anyhow::Result;
 use structopt::StructOpt;
 
-use crate::cli::Cli;
 use crate::alignment::Alignment;
+use crate::cli::Cli;
 
+mod alignment;
 mod cli;
 mod covplot;
-mod alignment;
 
 /// Vircov application
 ///
