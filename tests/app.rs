@@ -73,7 +73,7 @@ fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
-        "-v"
+        "-v",
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
@@ -84,14 +84,15 @@ fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::
 }
 
 #[test]
-fn valid_output_string_default_filters_region_threshold_pass() -> Result<(), Box<dyn std::error::Error>> {
+fn valid_output_string_default_filters_region_threshold_pass(
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
         "-r",
-        "2"
+        "2",
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
@@ -102,33 +103,32 @@ fn valid_output_string_default_filters_region_threshold_pass() -> Result<(), Box
 }
 
 #[test]
-fn valid_output_string_default_filters_region_threshold_none() -> Result<(), Box<dyn std::error::Error>> {
+fn valid_output_string_default_filters_region_threshold_none(
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
         "-r",
-        "3"
+        "3",
     ]);
 
-    cmd.assert().success().stdout(predicate::str::contains(
-        "",
-    ));
+    cmd.assert().success().stdout(predicate::str::contains(""));
 
     Ok(())
 }
 
-
 #[test]
-fn valid_output_string_default_filters_refseq_length_pass() -> Result<(), Box<dyn std::error::Error>> {
+fn valid_output_string_default_filters_refseq_length_pass() -> Result<(), Box<dyn std::error::Error>>
+{
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
         "-s",
-        "5000"
+        "5000",
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
@@ -138,21 +138,19 @@ fn valid_output_string_default_filters_refseq_length_pass() -> Result<(), Box<dy
     Ok(())
 }
 
-
 #[test]
-fn valid_output_string_default_filters_refseq_length_none() -> Result<(), Box<dyn std::error::Error>> {
+fn valid_output_string_default_filters_refseq_length_none() -> Result<(), Box<dyn std::error::Error>>
+{
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
         "tests/cases/test_ok.paf",
         "--fasta",
         "tests/cases/test_ok.fasta",
         "-s",
-        "8000"
+        "8000",
     ]);
 
-    cmd.assert().success().stdout(predicate::str::contains(
-        "",
-    ));
+    cmd.assert().success().stdout(predicate::str::contains(""));
 
     Ok(())
 }
