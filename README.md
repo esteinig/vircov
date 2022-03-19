@@ -28,7 +28,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 ## Implementation
 
-`Vircov` is written in Rust and works with alignments in the standard `PAF` or `SAM/BAM/CRAM` (next release) formats. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments, and text-style coverage plots can be printed to the terminal for visual inspection.
+`Vircov` is written in Rust and works with alignments in the standard `PAF` or `SAM/BAM/CRAM` (next release) formats. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments and text-style coverage plots can be printed to the terminal for visual confirmation.
 
 `Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
@@ -55,7 +55,7 @@ cd vircov && cargo test && cargo tarpaulin
 
 ## Concept
 
-Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. When only few reads map to the reference and when genome coverage is therefore low, positive infections often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
+Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. When only few reads map to the reference, and when genome coverage is therefore low, positive infections often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
 
 [De Vries et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1386653221000792) summarize this concept succinctly in this figure (adapted):
 
@@ -63,7 +63,7 @@ Definitive viral diagnosis from metagenomic clinical samples can be extremely ch
 
 Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold on the number of regions is chosen by the authors (> 3). However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
 
-`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call without having to generate coverage plots. 
+`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call. 
 
 
 ## Clinical examples
@@ -86,10 +86,10 @@ Alignments with `minimap2`:
 
 ## Etymology
 
-Not a very creative abbreviation of "virus coverage" but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. His surname is pronounced somewhat like `vircov` if you mumble the terminal `v`.
+Not a very creative abbreviation of "virus coverage" but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. His surname is pronounced like `vircov` if you mumble the terminal `v`.
 
 ## Contributors
 
-* Prof. Deborah Williamson & Prof. Lachlan Coin (principal investigators for `META-GP`)
+* Prof. Deborah Williamson and Prof. Lachlan Coin (principal investigators for `META-GP`)
 * Dr. Leon Caly (samples and sequencing for testing on clinical data)
 
