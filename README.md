@@ -89,6 +89,6 @@ Not a very creative abbreviation of "virus coverage" but the little spectacles i
 
 ## Contributors
 
-* Lachlan Coin and Deborah Williamson (`META-GP`)
-* Leon Caly (samples and sequencing)
+* Prof. Deborah Williamson & Prof. Lachlan Coin (principal investigators for `META-GP`)
+* Dr. Leon Caly (samples and sequencing for testing on clinical data)
 
