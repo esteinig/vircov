@@ -67,7 +67,7 @@ pub struct Cli {
     /// computing the bases covered by each coverage segment.
     #[structopt(short = "w", long = "width", default_value = "100")]
     pub width: u64,
-    /// Minimum reference sequence length 
+    /// Minimum reference sequence length
     ///
     /// Filters results by minimum reference sequence length
     /// which can help remove small gene alignment in large

@@ -19,20 +19,22 @@ include = [
 ]
 
 [dependencies]
+csv = "1.1"
 anyhow = "1.0"
-structopt = "0.3"
 clap = "2.33.0"
+tabled = "0.5.0"
+structopt = "0.3"
 thiserror = "1.0"
-rust-lapper = "1.0.0"
-noodles = { version = "0.20.0", features = ["fasta"] }
 crossterm = "0.23.0"
 itertools = "0.10.3"
-tabled = "0.5.0"
+rust-lapper = "1.0.0"
+serde = { version = "1.0.136", features = ["derive"] }
+noodles = { version = "0.20.0", features = ["fasta"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.1"
-predicates = "1"
 float_eq = "0.6.1"
+predicates = "1"
 
 [[bin]]
 name = "vircov"
