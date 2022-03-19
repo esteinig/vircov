@@ -18,6 +18,7 @@ Minimal virus genome coverage assessment for metagenomic diagnostics
 - [Tests](#tests)
 - [Concept](#concept)
 - [Clinical examples](#clinical-examples)
+- [Performance](#performance)
 - [Etymology](#concept)
 - [Contributors](#contributors)
 
