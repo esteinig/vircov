@@ -17,7 +17,7 @@ Minimal virus genome coverage assessment for metagenomic diagnostics
 - [Usage](#usage)
 - [Tests](#tests)
 - [Concept](#concept)
-- [Examples](#examples)
+- [Clinical examples](#clinical-examples)
 - [Etymology](#concept)
 - [Contributors](#contributors)
 
@@ -65,7 +65,7 @@ Positive calls in these cases can be made from coverage plots showing the distin
 `Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call without having to generate coverage plots. 
 
 
-## Examples
+## Clinical examples
 
 ```
 ```
