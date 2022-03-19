@@ -2,11 +2,11 @@ use anyhow::Result;
 use structopt::StructOpt;
 
 use crate::cli::Cli;
-use crate::paf::PafAlignment;
+use crate::alignment::Alignment;
 
 mod cli;
 mod covplot;
-mod paf;
+mod alignment;
 
 /// Vircov application
 ///
@@ -16,7 +16,7 @@ mod paf;
 fn main() -> Result<()> {
     let args = Cli::from_args();
 
-    let paf = PafAlignment::from(
+    let paf = Alignment::from_paf(
         args.path,
         args.fasta,
         args.min_len,

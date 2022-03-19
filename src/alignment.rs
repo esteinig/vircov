@@ -22,7 +22,7 @@ Custom error definitions
 */
 
 #[derive(Error, Debug)]
-pub enum PafAlignmentError {
+pub enum AlignmentError {
     /// Indicates failure to read file
     #[error("failed to read file")]
     FileIO(#[from] std::io::Error),
@@ -93,16 +93,16 @@ PAF alignment parssing and extraction
 
 /// Paf struct
 #[derive(Debug, Clone)]
-pub struct PafAlignment {
+pub struct Alignment {
     /// PafRecords parsed from file (PAF)
     pub target_intervals: TargetIntervals,
     /// Reference sequence names and lengths from file (FASTA)
     pub seq_lengths: Option<HashMap<String, u64>>,
 }
 
-impl PafAlignment {
-    // Parse alignments from file without filtering
-    pub fn from(
+impl Alignment {
+    // Parse alignments from PAF file
+    pub fn from_paf(
         // Path to alignment file
         path: PathBuf,
         // Reference sequence fasta
@@ -113,7 +113,8 @@ impl PafAlignment {
         min_qaln_cov: f64,
         // Minimum mapping quality
         min_mapq: u8,
-    ) -> Result<Self, PafAlignmentError> {
+    ) -> Result<Self, AlignmentError> {
+
         let paf_file = File::open(path)?;
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
@@ -175,13 +176,33 @@ impl PafAlignment {
             }),
         }
     }
+    pub fn from_bam(
+        // Path to alignment file
+        path: PathBuf,
+        // Reference sequence fasta
+        fasta: Option<PathBuf>,
+        // Minimum query alignment length
+        min_qaln_len: u64,
+        // Minimum query coverage
+        min_qaln_cov: f64,
+        // Minimum mapping quality
+        min_mapq: u8,
+    ) -> Result<(), AlignmentError>{
+
+
+        let bam_file = File::open(path)?;
+
+
+        Ok(())
+    }
+
     /// Compute coverage distribution by target sequence
     pub fn coverage_statistics(
         &self,
         cov_reg: u64,
         seq_len: u64,
         verbosity: u64,
-    ) -> Result<Vec<CoverageFields>, PafAlignmentError> {
+    ) -> Result<Vec<CoverageFields>, AlignmentError> {
         let mut coverage_fields: Vec<CoverageFields> = Vec::new();
         for (target_name, targets) in &self.target_intervals {
             // Bases of target sequence covered
@@ -258,7 +279,7 @@ impl PafAlignment {
         &self,
         coverage_fields: &[CoverageFields],
         table: bool,
-    ) -> Result<(), PafAlignmentError> {
+    ) -> Result<(), AlignmentError> {
         match table {
             true => {
                 let _table = Table::new(coverage_fields)
@@ -292,7 +313,7 @@ impl PafAlignment {
         &self,
         coverage_fields: &[CoverageFields],
         max_width: u64,
-    ) -> Result<(), PafAlignmentError> {
+    ) -> Result<(), AlignmentError> {
         println!();
         for (target_name, targets) in &self.target_intervals {
             let target_seq_len = match &self.seq_lengths {
@@ -300,7 +321,7 @@ impl PafAlignment {
                 Some(seqs) => seqs.get(target_name),
             };
             let seq_length = match target_seq_len {
-                None => return Err(PafAlignmentError::CovPlotSeqLength()),
+                None => return Err(AlignmentError::CovPlotSeqLength()),
                 Some(value) => *value,
             };
 
@@ -543,7 +564,7 @@ mod tests {
     fn paf_parser_create_new_record_size_fail() {
         let test_cases = TestCases::new();
         // PafAlignmentError does not implement PartialEq to assure standard Error type for parsing, let test fail instead
-        let _ = PafAlignment::from(
+        let _ = Alignment::from_paf(
             test_cases.paf_test_file_record_size_fail,
             None,
             0_u64,
@@ -557,14 +578,14 @@ mod tests {
     fn paf_parser_create_new_filter_mapq_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
+            Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 30_u8).unwrap();
         assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
     }
     #[test]
     fn paf_parser_create_new_filter_min_len_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 50_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 50_u64, 0_f64, 0_u8).unwrap();
         assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
         assert_eq!(paf_aln.target_intervals[1].1.len(), 1);
     }
@@ -572,7 +593,7 @@ mod tests {
     fn paf_parser_create_new_filter_min_cov_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0.5, 0_u8).unwrap();
         assert_eq!(paf_aln.target_intervals[0].1.len(), 2);
         assert_eq!(paf_aln.target_intervals[1].1.len(), 1);
     }
@@ -580,7 +601,7 @@ mod tests {
     #[test]
     fn paf_parser_create_new_fasta_input_provided_ok() {
         let test_cases = TestCases::new();
-        let paf_aln = PafAlignment::from(
+        let paf_aln = Alignment::from_paf(
             test_cases.paf_test_file_ok,
             Some(test_cases.paf_test_fasta_ok),
             0_u64,
@@ -598,7 +619,7 @@ mod tests {
     fn paf_parser_create_new_fasta_input_not_provided_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
         assert_eq!(paf_aln.seq_lengths, None);
     }
 
@@ -606,7 +627,7 @@ mod tests {
     #[should_panic]
     fn paf_parser_create_new_fasta_input_not_exists_fail() {
         let test_cases = TestCases::new();
-        let _ = PafAlignment::from(
+        let _ = Alignment::from_paf(
             test_cases.paf_test_file_ok,
             Some(PathBuf::from("tests/cases/not_exist.fasta")),
             0_u64,
@@ -620,7 +641,7 @@ mod tests {
     fn paf_parser_compute_target_intervals_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
         let actual_intervals_l = paf_aln.target_intervals[0].1.intervals.clone();
         let actual_intervals_s = paf_aln.target_intervals[1].1.intervals.clone();
         assert_eq!(actual_intervals_l, test_cases.paf_test_intervals_l_segment);
@@ -631,7 +652,7 @@ mod tests {
     fn paf_parser_compute_statistics_no_ref_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
         let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
         assert_eq!(
             actual_statistics,
@@ -643,7 +664,7 @@ mod tests {
     fn paf_parser_compute_statistics_no_ref_no_tags_ok() {
         let test_cases = TestCases::new();
         let paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
         let actual_statistics = paf_aln.coverage_statistics(0, 0, 0).unwrap();
         assert_eq!(
             actual_statistics,
@@ -656,7 +677,7 @@ mod tests {
     fn paf_parser_compute_statistics_no_ref_seq_len_zero_ok() {
         let test_cases = TestCases::new();
         let mut paf_aln =
-            PafAlignment::from(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+        Alignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
         paf_aln.seq_lengths = Some(HashMap::from([
             ("21172389_LCMV_L-segment_final".to_string(), 0),
             ("21172389_LCMV_S-segment_final".to_string(), 0),
@@ -671,7 +692,7 @@ mod tests {
     #[test]
     fn paf_parser_compute_statistics_ref_ok() {
         let test_cases = TestCases::new();
-        let paf_aln = PafAlignment::from(
+        let paf_aln = Alignment::from_paf(
             test_cases.paf_test_file_ok,
             Some(test_cases.paf_test_fasta_ok),
             0_u64,
