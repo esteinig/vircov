@@ -42,7 +42,7 @@ cd vircov && cargo build --release
 ## Usage
 
 ```
-vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table --cov-reg
+vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table
 ```
 
 ## Tests
