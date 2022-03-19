@@ -13,9 +13,13 @@ Minimal virus genome coverage assessment for metagenomic diagnostics
 
 - [Purpose](#purpose)
 - [Implementation](#implementation)
-- [Install](#install)
+- [Installation](#installation)
 - [Usage](#usage)
+- [Tests](#tests)
 - [Concept](#concept)
+- [Examples](#examples)
+- [Etymology](#concept)
+- [Contributors](#contributors)
 
 ## Purpose
 
@@ -28,7 +32,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 `Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
 
-## Install
+## Installation
 
 ```bash
 git clone https://github.com/esteinig/vircov 
@@ -82,3 +86,9 @@ Alignments with `minimap2`:
 ## Etymology
 
 Not a very creative abbreviation of "virus coverage" but the little spectacles in the logo are a reference to [Rudolf Virchow](https://en.wikipedia.org/wiki/Rudolf_Virchow) who described such trivial concepts as cells, cancer and pathology. His surname is pronounced somewhat like `vircov` if you mumble the terminal `v`.
+
+## Contributors
+
+* Lachlan Coin and Deborah Williamson (`META-GP`)
+* Leon Caly (samples and sequencing)
+
