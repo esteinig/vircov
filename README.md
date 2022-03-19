@@ -79,8 +79,8 @@ Alignments with `minimap2`:
 
 `.paf`
     
-  * **Sample 1** (212 MB): 0.78 seconds, peak memory usage 12 MB
-  * **Sample 2** (8.9 GB): 54.3 seconds, peak memory usage 2.9 GB
+  * **Sample 1** (212 MB): 0.56 seconds, peak memory usage 12 MB
+  * **Sample 2** (8.9 GB): 55.4 seconds, peak memory usage 2.9 GB
 
 
 ## Etymology
