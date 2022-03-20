@@ -20,6 +20,7 @@ include = [
 
 [dependencies]
 csv = "1.1"
+bio = "0.40"
 anyhow = "1.0"
 clap = "2.33.0"
 tabled = "0.5.0"
@@ -30,7 +31,7 @@ itertools = "0.10.3"
 rust-htslib = "0.38"
 rust-lapper = "1.0.0"
 serde = { version = "1.0.136", features = ["derive"] }
-noodles = { version = "0.20.0", features = ["fasta"] }
+
 
 [dev-dependencies]
 assert_cmd = "2.0.1"
