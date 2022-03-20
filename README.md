@@ -73,15 +73,15 @@ Positive calls in these cases can be made from coverage plots showing the distin
 
 ## Performance
 
-Alignments with `minimap2`:
+Alignments with `minimap2`; peak memory use is based on aligned interval records after applying filters during parsing.
 
 * **Sample 1**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
 * **Sample 2**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 63 million alignments 
 
 `.paf`
     
-  * **Sample 1** (212 MB): 0.56 seconds, peak memory usage 12 MB
-  * **Sample 2** (8.9 GB): 55.4 seconds, peak memory usage 2.9 GB
+  * **Sample 1** (212 MB): 0.56 seconds, peak memory: 12 MB 
+  * **Sample 2** (8.9 GB): 55.4 seconds, peak memory: 2.9 GB
 
 
 ## Etymology
