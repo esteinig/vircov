@@ -4,8 +4,10 @@ use crossterm::style::Color;
 use itertools::Itertools;
 use noodles::fasta;
 use rust_htslib::bam::ext::BamRecordExtensions;
-use rust_htslib::bam::Header;
-use rust_htslib::{bam, bam::HeaderView, bam::Read, bam::Record as BamLibRecord};
+use rust_htslib::{
+    bam, bam::record::Cigar, bam::record::CigarStringView, bam::HeaderView, bam::Read,
+    bam::Record as BamLibRecord,
+};
 use rust_lapper::{Interval, Lapper};
 use serde::Deserialize;
 use std::collections::btree_map::Entry;
@@ -17,8 +19,6 @@ use std::path::PathBuf;
 use std::str::from_utf8;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
-
-type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 
 /*
 ========================
@@ -103,10 +103,12 @@ pub struct CoverageFields {
 }
 
 /*
-=====================================
-PAF alignment parssing and extraction
-=====================================
+==========================================
+Alignment parssing and interval extraction
+==========================================
 */
+
+type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 
 /// Paf struct
 #[derive(Debug, Clone)]
@@ -120,9 +122,9 @@ pub struct ReadAlignment {
 impl ReadAlignment {
     // Parse alignments from file
     pub fn from_paf(
-        // Path to alignment file [PAF]
+        // Path to alignment file [PAF or "-"]
         path: PathBuf,
-        // Reference sequence fasta
+        // Reference sequence fasta file
         fasta: Option<PathBuf>,
         // Minimum query alignment length
         min_qaln_len: u64,
@@ -175,7 +177,7 @@ impl ReadAlignment {
         let target_lappers = target_intervals
             .into_iter()
             .map(|entry| (entry.0, Lapper::new(entry.1)))
-            .collect::<Vec<(String, Lapper<usize, String>)>>();
+            .collect::<TargetIntervals>();
 
         match fasta {
             Some(fasta_path) => {
@@ -185,8 +187,11 @@ impl ReadAlignment {
 
                 let mut lengths: HashMap<String, u64> = HashMap::new();
                 for result in reader.records() {
-                    let record = result?;
-                    lengths.insert(record.name().to_string(), record.sequence().len() as u64);
+                    let fasta_record = result?;
+                    lengths.insert(
+                        fasta_record.name().to_string(),
+                        fasta_record.sequence().len() as u64,
+                    );
                 }
 
                 Ok(Self {
@@ -202,9 +207,9 @@ impl ReadAlignment {
     }
     // Parse alignments from file
     pub fn from_bam(
-        // Path to alignment file [SAM/BAM/CRAM]
+        // Path to alignment file [SAM/BAM/CRAM or "-"]
         path: PathBuf,
-        // Reference sequence fasta
+        // Reference sequence fasta file
         fasta: Option<PathBuf>,
         // Minimum query alignment length
         min_qaln_len: u64,
@@ -221,30 +226,73 @@ impl ReadAlignment {
             },
             None => return Err(ReadAlignmentError::FileInputError()),
         };
-
         let header_view = bam.header().to_owned();
+
+        let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
 
         for result in bam.records() {
             let record = result?;
-
             if record.is_unmapped() {
                 continue;
             }
 
-            let paf_record = PafRecord::from_bam(&record, &header_view);
+            let bam_record = BamRecord::from(&record, &header_view)?;
+
+            if bam_record.qalen >= min_qaln_len
+                && bam_record.query_coverage() >= min_qaln_cov
+                && bam_record.mapq >= min_mapq
+            {
+                match target_intervals.entry(bam_record.tname.clone()) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().push(Interval {
+                            start: bam_record.tstart,
+                            stop: bam_record.tend,
+                            val: bam_record.qname.clone(), // add the query read name here for reference, see if it affects performance
+                        });
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(vec![Interval {
+                            start: bam_record.tstart,
+                            stop: bam_record.tend,
+                            val: bam_record.qname.clone(),
+                        }]);
+                    }
+                }
+            }
         }
 
+        let target_lappers = target_intervals
+            .into_iter()
+            .map(|entry| (entry.0, Lapper::new(entry.1)))
+            .collect::<TargetIntervals>();
+
         Ok(Self {
-            target_intervals: Vec::from([(
-                "".to_string(),
-                Lapper::new(Vec::from([Interval {
-                    start: 0_usize,
-                    stop: 0_usize,
-                    val: "".to_string(),
-                }])),
-            )]),
+            target_intervals: target_lappers,
             seq_lengths: None,
         })
+
+        // match fasta {
+        //     Some(fasta_path) => {
+        //         let mut reader = File::open(fasta_path)
+        //             .map(BufReader::new)
+        //             .map(fasta::Reader::new)?;
+
+        //         let mut lengths: HashMap<String, u64> = HashMap::new();
+        //         for result in reader.records() {
+        //             let fasta_record = result?;
+        //             lengths.insert(fasta_record.name().to_string(), fasta_record.sequence().len() as u64);
+        //         }
+
+        //         Ok(Self {
+        //             target_intervals: target_lappers,
+        //             seq_lengths: Some(lengths),
+        //         })
+        //     }
+        //     None => match header_view. .Ok(Self {
+        //         target_intervals: target_lappers,
+        //         seq_lengths: None,
+        //     }),
+        // }
     }
 
     /// Compute coverage distribution by target sequence
@@ -396,6 +444,74 @@ Alignment records
 =================
 */
 
+/// Return the query alignment length from a CIGAR string
+/// as the sum of all matches (M) and insertions (I).
+///
+/// PAF considers insertaions but not deletions when computing
+/// query start and end positions from which the query alignment
+/// length is then calculated in PafRecord (qend - qstart).
+fn qalen_from_cigar<'a>(cigar: impl Iterator<Item = &'a Cigar>) -> u32 {
+    cigar
+        .map(|x| match x {
+            Cigar::Match(_) => x.len(),
+            Cigar::Ins(_) => x.len(),
+            _ => 0,
+        })
+        .sum()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BamRecord {
+    /// Query sequence name.
+    pub qname: String,
+    /// Query sequence length.
+    pub qlen: u64,
+    /// Query alignment length.
+    pub qalen: u64,
+    /// Target sequence name.
+    pub tname: String,
+    /// Target start on original strand (0-based).
+    pub tstart: usize,
+    /// Target end on original strand (0-based).
+    pub tend: usize,
+    /// Mapping quality (0-255; 255 for missing).
+    pub mapq: u8,
+}
+
+impl BamRecord {
+    /// Create a new (reduced) BamRecord from a BAM HTS LIB record
+    pub fn from(record: &BamLibRecord, header: &HeaderView) -> Result<Self, ReadAlignmentError> {
+        let tid: u32 = record.tid().try_into()?; // from i32 [-1 allowed, but should not occur]
+        let tname = from_utf8(header.tid2name(tid))?.to_string();
+        let qname = from_utf8(record.qname())?.to_string();
+
+        let tstart: usize = record.reference_start().try_into()?; // from i32 [-1 allowed, but should not occur]
+        let tend: usize = record.reference_end().try_into()?; // from i32 [-1 allowed, but should not occur]
+
+        let qlen = record.seq_len() as u64;
+        let mapq = record.mapq();
+
+        let qalen: u32 = qalen_from_cigar(record.cigar().iter());
+
+        Ok(Self {
+            qname,
+            qlen,
+            qalen: qalen as u64,
+            tname,
+            tstart,
+            tend,
+            mapq,
+        })
+    }
+    /// Coverage of the aligned query sequence.
+    pub fn query_coverage(&self) -> f64 {
+        match self.qlen == 0 {
+            true => 0f64,
+            false => self.qalen as f64 / self.qlen as f64,
+        }
+    }
+}
+
 /// PAF record without tags
 #[derive(Debug, Clone, Deserialize)]
 pub struct PafRecord {
@@ -426,47 +542,6 @@ pub struct PafRecord {
 }
 
 impl PafRecord {
-    /// Create a new (reduced) record from a BAM record
-    pub fn from_bam(
-        record: &BamLibRecord,
-        header: &HeaderView,
-    ) -> Result<Self, ReadAlignmentError> {
-        let tid: u32 = record.tid().try_into()?; // from i32 [-1 allowed]
-        let tname = from_utf8(header.tid2name(tid))?;
-        let qname = from_utf8(record.qname())?;
-
-        let tstart: u32 = record.reference_start().try_into()?; // from i32 [-1 allowed]
-        let tend: u32 = record.reference_end().try_into()?; // from i32 [-1 allowed]
-
-        let qlen = record.seq_len();
-        let mapq = record.mapq();
-
-        println!(
-            "{} {} {} {} {} {} {:?}",
-            qname,
-            qlen,
-            tstart,
-            tend,
-            mapq,
-            tname,
-            record.cigar()
-        );
-
-        Ok(Self {
-            qname: "".to_string(),
-            qlen: 0,
-            qstart: 0,
-            qend: 0,
-            strand: "".to_string(),
-            tname: "".to_string(),
-            tlen: 0,
-            tstart: 0,
-            tend: 0,
-            mlen: 0,
-            blen: 0,
-            mapq: 0,
-        })
-    }
     /// Length of the aligned query sequence.
     pub fn query_aligned_length(&self) -> u64 {
         (self.qend - self.qstart) as u64
@@ -817,5 +892,46 @@ mod tests {
     fn tabled_helper_format_tags_absent_ok() {
         let expected = display_tags("");
         assert_eq!("-".to_string(), expected);
+    }
+
+    #[test]
+    fn query_alignment_length_from_cigar_match() {
+        // Derived from a real example comparison between PAF and BAM of the same alignment
+        let cigars = vec![Cigar::Match(149)];
+        let qalen: u32 = qalen_from_cigar(cigars.iter());
+        assert_eq!(qalen, 149)
+    }
+
+    #[test]
+    fn query_alignment_length_from_cigar_with_del() {
+        // Derived from a real example comparison between PAF and BAM of the same alignment
+        // Deletion is not considered in PAF computation for qstart / qend
+        let cigars = vec![Cigar::Match(8), Cigar::Del(1), Cigar::Match(141)];
+        let qalen: u32 = qalen_from_cigar(cigars.iter());
+        assert_eq!(qalen, 149)
+    }
+
+    #[test]
+    fn query_alignment_length_from_cigar_with_ins() {
+        // Insertion is considered in PAF computation for qstart / qend
+        let cigars = vec![Cigar::Match(7), Cigar::Ins(1), Cigar::Match(141)];
+        let qalen: u32 = qalen_from_cigar(cigars.iter());
+        assert_eq!(qalen, 149)
+    }
+
+    #[test]
+    fn query_alignment_length_from_cigar_with_indel() {
+        // Derived from a real example comparison between PAF and BAM of the same alignment
+        // Insertion is considered, Deletion is not considered in PAF computation for qstart / qend
+        let cigars = vec![
+            Cigar::Match(35),
+            Cigar::Del(3),
+            Cigar::Match(15),
+            Cigar::Ins(1),
+            Cigar::Match(64),
+            Cigar::SoftClip(34),
+        ];
+        let qalen: u32 = qalen_from_cigar(cigars.iter());
+        assert_eq!(qalen, 115)
     }
 }

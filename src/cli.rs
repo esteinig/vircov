@@ -10,7 +10,7 @@ pub struct Cli {
     ///
     /// Alignment input file in PAF format (minimap2)
     #[structopt(
-        short, long, parse(try_from_os_str = check_file_exists), group = "alignment",
+        short, long, parse(try_from_os_str = check_file_exists), group = "alignment"
     )]
     pub paf: Option<PathBuf>,
     /// Alignment file (SAM/BAM/CRAM, "-" for STDIN)
@@ -40,8 +40,8 @@ pub struct Cli {
     pub min_len: u64,
     /// Minimum coverage of the aligned query sequence
     ///
-    /// Filters (&) alignmentsby minimum proportion of the query sequence involved
-    /// in the alignment which corresponds to the division of the length of the
+    /// Filters (&) alignments by minimum proportion of the query sequence involved
+    /// in the alignment which corresponds to division of the length of the
     /// aligned query sequence by the length of the query sequence.
     #[structopt(short = "c", long = "min-cov", default_value = "0")]
     pub min_cov: f64,
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn verbosity_exceeds_limit() {
-        let passed_args = vec!["vircov", "-vv", "tests/cases/test_ok.paf"];
+        let passed_args = vec!["vircov", "-vv", "--paf", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
         let actual = args.unwrap().verbose;
         let expected = 1;
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn valid_verbosity_level() {
-        let passed_args = vec!["vircov", "-v", "tests/cases/test_ok.paf"];
+        let passed_args = vec!["vircov", "-v", "--paf", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
         let actual = args.unwrap().verbose;
         let expected = 1;
