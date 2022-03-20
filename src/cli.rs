@@ -1,19 +1,26 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
-use structopt::StructOpt;
+use structopt::{clap::ArgGroup, StructOpt};
 
 // Vircov command-line client
 #[derive(Debug, StructOpt)]
-#[structopt(name = "vircov")]
+#[structopt(name = "vircov", group = ArgGroup::with_name("alignment").required(true))]
 pub struct Cli {
-    /// Alignment file (PAF)
+    /// Alignment file (PAF, "-" for STDIN)
     ///
-    /// Alignment input file, currently supports PAF (minimap2)
+    /// Alignment input file in PAF format (minimap2)
     #[structopt(
-        parse(try_from_os_str = check_file_exists)
+        short, long, parse(try_from_os_str = check_file_exists), group = "alignment",
     )]
-    pub path: PathBuf,
-    /// Reference sequences in FASTA format
+    pub paf: Option<PathBuf>,
+    /// Alignment file (SAM/BAM/CRAM, "-" for STDIN)
+    ///
+    /// Alignment input file in SAM/BAM/CRAM format
+    #[structopt(
+        short, long, parse(try_from_os_str = check_file_exists), group = "alignment"
+    )]
+    pub bam: Option<PathBuf>,
+    /// Reference sequences in FASTA format [default: None]
     ///
     /// If the input format is PAF, computation of the total coverage
     /// against each target sequence requires sequence lengths. Should
@@ -51,15 +58,17 @@ pub struct Cli {
     /// alignments in the block, separated by semicolons (e.g.3450:3500:9)
     #[structopt(short, long, parse(from_occurrences = parse_verbosity))]
     pub verbose: u64,
-    /// Pretty print output table  
+    /// Prints pretty output table  
     ///
-    /// Output the coverage statistics as a pretty table.
+    /// Output the coverage statistics as a pretty table; may still get
+    /// mangled on short terminals, as terminal width cannot currently
+    /// be estimated in underlying library.
     #[structopt(short = "t", long = "table")]
     pub table: bool,
     /// Prints coverage plots
     ///
     /// Output coverage plots below the coverage statistics.
-    #[structopt(short = "p", long = "cov-plot")]
+    #[structopt(short = "k", long = "cov-plot")]
     pub covplot: bool,
     /// Width of coverage plots
     ///
@@ -70,14 +79,14 @@ pub struct Cli {
     /// Minimum reference sequence length
     ///
     /// Filters results by minimum reference sequence length
-    /// which can help remove small gene alignment in large
-    /// databases (e.g. reduce outpout to whole genome mappings)
+    /// which can help remove alignments against small genes
+    /// or genome fragments.
     #[structopt(short = "s", long = "seq-len", default_value = "0")]
     pub seq_len: u64,
     /// Minimum number of coverage regions
     ///
     /// Filters results by a minimum number of coverage regions, the
-    /// primary output to determine a positive hit
+    /// primary output to determine a positive hit.
     #[structopt(short = "r", long = "regions", default_value = "0")]
     pub regions: u64,
 }
