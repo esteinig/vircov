@@ -73,7 +73,7 @@ Positive calls in these cases can be made from coverage plots showing the distin
 
 ## Performance
 
-Alignments with `minimap2`; peak memory use is based on aligned interval records after applying filters during parsing.
+Alignments conducted with `minimap2 -c -x sr` (PAF) and `minimap2 -ax sr` (SAM/BAM, all sequences) or `minimap2 --sam-hits-only -ax sr` (SAM/BAM, only aligned sequences). Peak memory use is mainly determined by aligned interval records that remain after filtering as data is parsed and are stored for the overlap computations. It may vary depending on how many alignments remain after filtering, the numebr of aligned reads, output formats (e.g. all seqeunces in SAM/BAM) and size of the reference database.
 
 * **Sample 1**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
 * **Sample 2**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 63 million alignments 
