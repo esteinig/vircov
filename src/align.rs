@@ -46,9 +46,12 @@ pub enum ReadAlignmentError {
     /// Indicates failure to parse a record name from BAM file
     #[error("failed to parse record name from BAM")]
     UTF8Error(#[from] std::str::Utf8Error),
-    /// Indicates failure to parse a record name from BAM file
-    #[error("failed to parse a valid record target identifier from BAM")]
+    /// Indicates failure to parse a target name from BAM file
+    #[error("failed to parse a valid record target name from BAM")]
     TIDError(#[from] std::num::TryFromIntError),
+    /// Indicates failure to parse an u64 from PAF
+    #[error("failed to parse a valid integer from PAF")]
+    PafRecordIntError(#[from] std::num::ParseIntError),
 }
 
 /*
@@ -107,7 +110,8 @@ Alignment parssing and interval extraction
 
 type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 
-// Parse an optional FASTA file into a optional HashMap with sequence name (key) and sequence record (value)
+// Parse an optional FASTA file into a optional HashMap
+// with sequence name (key) and sequence record (value)
 fn parse_fasta(
     fasta: Option<PathBuf>,
 ) -> Result<Option<HashMap<String, fasta::Record>>, ReadAlignmentError> {
@@ -151,7 +155,7 @@ impl ReadAlignment {
         // Minimum mapping quality
         min_mapq: u8,
     ) -> Result<Self, ReadAlignmentError> {
-        let handle: Box<dyn BufRead> = match path.file_name() {
+        let reader: Box<dyn BufRead> = match path.file_name() {
             Some(os_str) => match os_str.to_str() {
                 Some("-") => Box::new(BufReader::new(std::io::stdin())),
                 Some(_) => Box::new(BufReader::new(File::open(path)?)),
@@ -160,15 +164,10 @@ impl ReadAlignment {
             None => return Err(ReadAlignmentError::FileInputError()),
         };
 
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .delimiter(b'\t')
-            .from_reader(handle);
-
         let mut target_intervals: BTreeMap<String, Vec<Interval<usize, String>>> = BTreeMap::new();
 
-        for result in reader.deserialize() {
-            let record: PafRecord = result?;
+        for result in reader.lines() {
+            let record: PafRecord = PafRecord::from_str(result?)?;
             if record.query_aligned_length() >= min_qaln_len
                 && record.query_coverage() >= min_qaln_cov
                 && record.mapq >= min_mapq
@@ -499,7 +498,7 @@ impl BamRecord {
 }
 
 /// PAF record without tags
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct PafRecord {
     /// Query sequence name.
     pub qname: String,
@@ -528,6 +527,27 @@ pub struct PafRecord {
 }
 
 impl PafRecord {
+    // Create a record from a parsed line
+    pub fn from_str(paf: String) -> Result<Self, ReadAlignmentError> {
+        let fields: Vec<&str> = paf.split("\t").collect();
+
+        let record = Self {
+            qname: fields[0].to_string(),
+            qlen: fields[1].parse::<u64>()?,
+            qstart: fields[2].parse::<usize>()?,
+            qend: fields[3].parse::<usize>()?,
+            strand: fields[4].to_string(),
+            tname: fields[5].to_string(),
+            tlen: fields[6].parse::<u64>()?,
+            tstart: fields[7].parse::<usize>()?,
+            tend: fields[8].parse::<usize>()?,
+            mlen: fields[9].parse::<u64>()?,
+            blen: fields[10].parse::<u64>()?,
+            mapq: fields[11].parse::<u8>()?,
+        };
+
+        Ok(record)
+    }
     /// Length of the aligned query sequence.
     pub fn query_aligned_length(&self) -> u64 {
         (self.qend - self.qstart) as u64
