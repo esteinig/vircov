@@ -5,7 +5,7 @@ use std::process::Command;
 #[test]
 fn input_file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
-    cmd.args(vec!["file/doesnt/exist.paf"]);
+    cmd.args(vec!["--paf", "file/doesnt/exist.paf"]);
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("does not exist"));
@@ -17,9 +17,10 @@ fn input_file_doesnt_exist() -> Result<(), Box<dyn std::error::Error>> {
 fn valid_inputs_raise_no_errors() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-v",
     ]);
 
@@ -32,9 +33,10 @@ fn valid_inputs_raise_no_errors() -> Result<(), Box<dyn std::error::Error>> {
 fn valid_output_string_default_filters() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
@@ -48,9 +50,10 @@ fn valid_output_string_default_filters() -> Result<(), Box<dyn std::error::Error
 fn valid_output_string_no_filters() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "--min-mapq",
         "0",
         "--min-len",
@@ -70,9 +73,10 @@ fn valid_output_string_no_filters() -> Result<(), Box<dyn std::error::Error>> {
 fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-v",
     ]);
 
@@ -88,9 +92,10 @@ fn valid_output_string_default_filters_region_threshold_pass(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-r",
         "2",
     ]);
@@ -107,9 +112,10 @@ fn valid_output_string_default_filters_region_threshold_none(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-r",
         "3",
     ]);
@@ -124,9 +130,10 @@ fn valid_output_string_default_filters_refseq_length_pass() -> Result<(), Box<dy
 {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-s",
         "5000",
     ]);
@@ -143,9 +150,10 @@ fn valid_output_string_default_filters_refseq_length_none() -> Result<(), Box<dy
 {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
+        "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-s",
         "8000",
     ]);

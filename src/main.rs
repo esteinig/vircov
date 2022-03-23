@@ -1,34 +1,42 @@
 use anyhow::Result;
 use structopt::StructOpt;
 
+use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::cli::Cli;
-use crate::paf::PafAlignment;
 
+mod align;
 mod cli;
 mod covplot;
-mod paf;
 
 /// Vircov application
 ///
 /// Run the application from arguments provided
 /// by the command line interface
 #[cfg(not(tarpaulin_include))]
-fn main() -> Result<()> {
+fn main() -> Result<(), ReadAlignmentError> {
     let args = Cli::from_args();
 
-    let paf = PafAlignment::from(
-        args.path,
-        args.fasta,
-        args.min_len,
-        args.min_cov,
-        args.min_mapq,
-    )?;
+    let alignment = match args.paf {
+        Some(path) => {
+            ReadAlignment::from_paf(path, args.fasta, args.min_len, args.min_cov, args.min_mapq)?
+        }
+        None => match args.bam {
+            None => return Err(ReadAlignmentError::FileInputError()),
+            Some(path) => ReadAlignment::from_bam(
+                path,
+                args.fasta,
+                args.min_len,
+                args.min_cov,
+                args.min_mapq,
+            )?,
+        },
+    };
 
-    let data = paf.coverage_statistics(args.regions, args.seq_len, args.verbose)?;
-    paf.to_console(&data, args.table)?;
+    let data = alignment.coverage_statistics(args.regions, args.seq_len, args.verbose)?;
+    alignment.to_console(&data, args.table)?;
 
     match args.covplot {
-        true => paf.coverage_plots(&data, args.width)?,
+        true => alignment.coverage_plots(&data, args.width)?,
         false => {}
     }
 

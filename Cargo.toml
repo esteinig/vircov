@@ -1,7 +1,7 @@
 [package]
 rust-version = "1.58"
 name = "vircov"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
 description = "Vircov: genome coverage assessment for viral metagenomic diagnostics"
 documentation = "https://github.com/esteinig/vircov"
@@ -19,7 +19,7 @@ include = [
 ]
 
 [dependencies]
-csv = "1.1"
+bio = "0.40"
 anyhow = "1.0"
 clap = "2.33.0"
 tabled = "0.5.0"
@@ -27,9 +27,9 @@ structopt = "0.3"
 thiserror = "1.0"
 crossterm = "0.23.0"
 itertools = "0.10.3"
+rust-htslib = "0.38"
 rust-lapper = "1.0.0"
-serde = { version = "1.0.136", features = ["derive"] }
-noodles = { version = "0.20.0", features = ["fasta"] }
+
 
 [dev-dependencies]
 assert_cmd = "2.0.1"
