@@ -2,14 +2,13 @@
 
 [![build](https://github.com/esteinig/nanoq/actions/workflows/rust-ci.yaml/badge.svg?branch=master)](https://github.com/esteinig/nanoq/actions/workflows/rust-ci.yaml)
 [![codecov](https://codecov.io/gh/esteinig/vircov/branch/main/graph/badge.svg?token=RG95F4C6FE)](https://codecov.io/gh/esteinig/vircov)
-![](https://img.shields.io/badge/version-0.4.0-black.svg)
+![](https://img.shields.io/badge/version-0.5.0-black.svg)
 
 Minimal virus genome coverage assessment for metagenomic diagnostics
 
 ## Overview
 
-
-**`v0.4.0`**
+**`v0.5.0`**
 
 - [Purpose](#purpose)
 - [Implementation](#implementation)
@@ -32,6 +31,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 `Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
+Version `0.6.0` will be dsitributed on `BioConda` and `Cargo` and will have precompiled binaries available.
 
 ## Installation
 
