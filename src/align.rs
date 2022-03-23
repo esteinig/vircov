@@ -6,7 +6,6 @@ use itertools::Itertools;
 use rust_htslib::bam::ext::BamRecordExtensions;
 use rust_htslib::{bam, bam::record::Cigar, bam::HeaderView, bam::Read};
 use rust_lapper::{Interval, Lapper};
-use serde::Deserialize;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
@@ -37,9 +36,6 @@ pub enum ReadAlignmentError {
     /// Indicates failure with the coverage plot module
     #[error("failed to generate data for coverage plot")]
     CovPlot(#[from] crate::covplot::CovPlotError),
-    /// Indicates failure to parse and deserialize a PAF record
-    #[error("failed to parse a record from PAF")]
-    CSVRecord(#[from] csv::Error),
     /// Indicates failure to parse a BAM file
     #[error("failed to parse records from BAM")]
     HTSLIBError(#[from] rust_htslib::errors::Error),
@@ -445,7 +441,7 @@ fn qalen_from_cigar<'a>(cigar: impl Iterator<Item = &'a Cigar>) -> u32 {
         .sum()
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct BamRecord {
     /// Query sequence name.
     pub qname: String,
