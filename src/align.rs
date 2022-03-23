@@ -525,7 +525,7 @@ pub struct PafRecord {
 impl PafRecord {
     // Create a record from a parsed line
     pub fn from_str(paf: String) -> Result<Self, ReadAlignmentError> {
-        let fields: Vec<&str> = paf.split("\t").collect();
+        let fields: Vec<&str> = paf.split('\t').collect();
 
         let record = Self {
             qname: fields[0].to_string(),
