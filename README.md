@@ -31,7 +31,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 `Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
-Version `0.6.0` will be dsitributed on `BioConda` and `Cargo` and will have precompiled binaries available.
+Version `0.6.0` will be distributed on `BioConda` and `Cargo` and will have precompiled binaries available.
 
 ## Installation
 
@@ -73,7 +73,7 @@ Positive calls in these cases can be made from coverage plots showing the distin
 
 ## Performance
 
-Alignments conducted with `minimap2 -c -x sr` (PAF) and `minimap2 -ax sr` (SAM/BAM, all sequences) or `minimap2 --sam-hits-only -ax sr` (SAM/BAM, only aligned sequences). Peak memory use is mainly determined by aligned interval records that remain after filtering as data is parsed and are stored for the overlap computations. It may vary depending on how many alignments remain after filtering, the number of aligned reads, output formats (e.g. all seqeunces in SAM/BAM) and size of the reference database.
+Alignments conducted with `minimap2 -c -x sr` (PAF) and `minimap2 -ax sr` (SAM/BAM, all sequences) or `minimap2 --sam-hits-only -ax sr` (SAM/BAM, only aligned sequences). Peak memory is mainly determined by aligned interval records that are stored for the overlap computations. It may vary depending on how many alignments remain after filtering, the number of aligned reads, output formats and size of the reference database.
 
 * **Sample 1**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
 * **Sample 2**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 63 million alignments 
