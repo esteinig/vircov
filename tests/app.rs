@@ -20,7 +20,7 @@ fn valid_inputs_raise_no_errors() -> Result<(), Box<dyn std::error::Error>> {
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-v",
     ]);
 
@@ -36,7 +36,7 @@ fn valid_output_string_default_filters() -> Result<(), Box<dyn std::error::Error
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
@@ -53,7 +53,7 @@ fn valid_output_string_no_filters() -> Result<(), Box<dyn std::error::Error>> {
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "--min-mapq",
         "0",
         "--min-len",
@@ -76,7 +76,7 @@ fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-v",
     ]);
 
@@ -95,7 +95,7 @@ fn valid_output_string_default_filters_region_threshold_pass(
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-r",
         "2",
     ]);
@@ -115,7 +115,7 @@ fn valid_output_string_default_filters_region_threshold_none(
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-r",
         "3",
     ]);
@@ -133,7 +133,7 @@ fn valid_output_string_default_filters_refseq_length_pass() -> Result<(), Box<dy
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-s",
         "5000",
     ]);
@@ -153,7 +153,7 @@ fn valid_output_string_default_filters_refseq_length_none() -> Result<(), Box<dy
         "--paf",
         "tests/cases/test_ok.paf",
         "--fasta",
-        "tests/cases/test_ok.fasta",
+        "tests/cases/test_paf_ok.fasta",
         "-s",
         "8000",
     ]);

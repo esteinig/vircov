@@ -100,7 +100,7 @@ pub struct CoverageFields {
 
 /*
 ==========================================
-Alignment parssing and interval extraction
+Alignment parsing and interval extraction
 ==========================================
 */
 
@@ -573,6 +573,12 @@ mod tests {
     struct TestCases {
         // Valid PafRecord
         paf_record_ok: PafRecord,
+        // BAM record ok
+        bam_record_ok: BamRecord,
+        // Valid PAF string, sufficient fields to parse
+        paf_test_str_ok: String,
+        // Invalid PAF string, too few fields to parse
+        paf_test_str_size_fail: String,
         // Valid PAF file
         paf_test_file_ok: PathBuf,
         // Valid FASTA file
@@ -589,6 +595,18 @@ mod tests {
         paf_test_coverage_statistics_no_ref_no_tags: Vec<CoverageFields>,
         // PAF test alignment extracted coverage statistics, with reference sequences
         paf_test_coverage_statistics_ref: Vec<CoverageFields>,
+
+        // Valid SAM file
+        sam_test_file_ok: PathBuf,
+        // Valid BAM file
+        bam_test_file_ok: PathBuf,
+        // Valid FASTA file
+        bam_test_fasta_ok: PathBuf,
+        // Valid FASTA but without sequence edge case
+        bam_test_fasta_zero_ok: PathBuf,
+
+        // General failure to parse input file name
+        input_file_name_fail: PathBuf,
     }
 
     impl TestCases {
@@ -608,8 +626,23 @@ mod tests {
                     blen: 4,
                     mapq: 60,
                 },
+                bam_record_ok: BamRecord {
+                    qname: "query".to_string(),
+                    qlen: 4,
+                    qalen: 4,
+                    tname: "target".to_string(),
+                    tstart: 500,
+                    tend: 504,
+                    mapq: 60,
+                },
+                paf_test_str_ok: String::from(
+                    "query\t4\t400\t404\t+\ttarget\t5\t500\t504\t4\t4\t60",
+                ),
+                paf_test_str_size_fail: String::from(
+                    "query\t4\t400\t404\t+\ttarget\t5\t500\t504\t4\t4",
+                ),
                 paf_test_file_ok: PathBuf::from("tests/cases/test_ok.paf"),
-                paf_test_fasta_ok: PathBuf::from("tests/cases/test_ok.fasta"),
+                paf_test_fasta_ok: PathBuf::from("tests/cases/test_paf_ok.fasta"),
                 paf_test_file_record_size_fail: PathBuf::from(
                     "tests/cases/test_record_size_fail.paf",
                 ),
@@ -708,8 +741,39 @@ mod tests {
                         tags: "1574:1671:1 2188:2228:1".to_string(),
                     },
                 ],
+
+                sam_test_file_ok: PathBuf::from("tests/cases/test_ok.sam"),
+                bam_test_file_ok: PathBuf::from("tests/cases/test_ok.bam"),
+                bam_test_fasta_ok: PathBuf::from("tests/cases/test_bam_ok.fasta"),
+                bam_test_fasta_zero_ok: PathBuf::from("tests/cases/test_bam_zero_ok.fasta"),
+
+                input_file_name_fail: PathBuf::from("tests/cases/.."),
             }
         }
+    }
+
+    #[test]
+    fn paf_record_from_str_ok() {
+        let test_cases = TestCases::new();
+        let record = PafRecord::from_str(test_cases.paf_test_str_ok).unwrap();
+
+        assert_eq!(record.qname, test_cases.paf_record_ok.qname);
+        assert_eq!(record.qlen, test_cases.paf_record_ok.qlen);
+        assert_eq!(record.qstart, test_cases.paf_record_ok.qstart);
+        assert_eq!(record.qend, test_cases.paf_record_ok.qend);
+        assert_eq!(record.strand, test_cases.paf_record_ok.strand);
+        assert_eq!(record.tname, test_cases.paf_record_ok.tname);
+        assert_eq!(record.tlen, test_cases.paf_record_ok.tlen);
+        assert_eq!(record.tstart, test_cases.paf_record_ok.tstart);
+        assert_eq!(record.tend, test_cases.paf_record_ok.tend);
+        assert_eq!(record.mlen, test_cases.paf_record_ok.blen);
+        assert_eq!(record.mapq, test_cases.paf_record_ok.mapq);
+    }
+    #[test]
+    #[should_panic]
+    fn paf_record_from_str_size_fail() {
+        let test_cases = TestCases::new();
+        PafRecord::from_str(test_cases.paf_test_str_size_fail).unwrap();
     }
     #[test]
     fn paf_record_query_aligned_length_ok() {
@@ -730,6 +794,19 @@ mod tests {
     }
     #[test]
     #[should_panic]
+    fn paf_parser_input_file_name_fail() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_paf(
+            test_cases.input_file_name_fail,
+            Some(test_cases.paf_test_fasta_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+    }
+    #[test]
+    #[should_panic]
     fn paf_parser_create_new_record_size_fail() {
         let test_cases = TestCases::new();
         // PafAlignmentError does not implement PartialEq to assure standard Error type for parsing, let test fail instead
@@ -742,7 +819,6 @@ mod tests {
         )
         .unwrap();
     }
-
     #[test]
     fn paf_parser_create_new_filter_mapq_ok() {
         let test_cases = TestCases::new();
@@ -769,28 +845,11 @@ mod tests {
         assert_eq!(paf_aln.target_intervals[1].1.len(), 1);
     }
 
-    // #[test]
-    // fn paf_parser_create_new_fasta_input_provided_ok() {
-    //     let test_cases = TestCases::new();
-    //     let paf_aln = ReadAlignment::from_paf(
-    //         test_cases.paf_test_file_ok,
-    //         Some(test_cases.paf_test_fasta_ok),
-    //         0_u64,
-    //         0_f64,
-    //         0_u8,
-    //     )
-    //     .unwrap();
-    //     let mut expected: HashMap<String, u64> = HashMap::new();
-    //     assert_eq!(paf_aln.seq_lengths, Some(expected));
-    // }
-
-    // #[test]
-    // fn paf_parser_create_new_fasta_input_not_provided_ok() {
-    //     let test_cases = TestCases::new();
-    //     let paf_aln =
-    //         ReadAlignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
-    //     assert_eq!(paf_aln.target_sequences, None);
-    // }
+    #[test]
+    fn paf_parser_create_new_fasta_input_not_provided_ok() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+    }
 
     #[test]
     #[should_panic]
@@ -840,23 +899,6 @@ mod tests {
             test_cases.paf_test_coverage_statistics_no_ref_no_tags
         );
     }
-
-    // #[test]
-    // // Weird edge case that probably doesn't occur ever, where there is a zero length sequence read from the reference sequence file
-    // fn paf_parser_compute_statistics_no_ref_seq_len_zero_ok() {
-    //     let test_cases = TestCases::new();
-    //     let mut paf_aln =
-    //         ReadAlignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
-    //     paf_aln.seq_lengths = Some(HashMap::from([
-    //         ("21172389_LCMV_L-segment_final".to_string(), 0),
-    //         ("21172389_LCMV_S-segment_final".to_string(), 0),
-    //     ]));
-    //     let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
-    //     assert_eq!(
-    //         actual_statistics,
-    //         test_cases.paf_test_coverage_statistics_no_ref
-    //     );
-    // }
 
     #[test]
     fn paf_parser_compute_statistics_ref_ok() {
@@ -933,5 +975,67 @@ mod tests {
         ];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 115)
+    }
+    #[test]
+    fn bam_parser_sam_file_ok() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_bam(
+            test_cases.sam_test_file_ok,
+            Some(test_cases.bam_test_fasta_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+    }
+    #[test]
+    fn bam_parser_bam_file_ok() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_bam(
+            test_cases.bam_test_file_ok,
+            Some(test_cases.bam_test_fasta_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+    }
+    #[test]
+    fn bam_parser_no_fasta_file_ok() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_bam(test_cases.bam_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
+    }
+    #[test]
+    #[should_panic]
+    fn bam_parser_input_file_name_fail() {
+        let test_cases = TestCases::new();
+        ReadAlignment::from_bam(
+            test_cases.input_file_name_fail,
+            Some(test_cases.bam_test_fasta_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+    }
+    #[test]
+    fn bam_record_query_coverage_zero_len_ok() {
+        let test_cases = TestCases::new();
+        let mut record = test_cases.bam_record_ok;
+        record.qlen = 0;
+        assert_eq!(record.query_coverage(), 0_f64)
+    }
+    #[test]
+    fn coverage_statistics_zero_len_ok() {
+        let test_cases = TestCases::new();
+        let bam_aln = ReadAlignment::from_bam(
+            test_cases.bam_test_file_ok,
+            Some(test_cases.bam_test_fasta_zero_ok),
+            0_u64,
+            0_f64,
+            0_u8,
+        )
+        .unwrap();
+        bam_aln.coverage_statistics(0, 0, 0).unwrap();
     }
 }
