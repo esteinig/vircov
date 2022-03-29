@@ -73,9 +73,9 @@ Positive calls in these cases can be made from coverage plots showing the distin
 
 ## Performance
 
-Alignments conducted with `minimap2 -c -x sr` (PAF) and `minimap2 -ax sr` (SAM/BAM, all sequences) or `minimap2 --sam-hits-only -ax sr` (SAM/BAM, only aligned sequences). Peak memory is mainly determined by aligned interval records that are stored for the overlap computations. It may vary depending on how many alignments remain after filtering, the number of aligned reads, output formats and size of the reference database.
+Alignments conducted with `minimap2 -c -x sr` (PAF) and `minimap2 --sam-hits-only -ax sr` (SAM/BAM, only aligned sequences). Peak memory is mainly determined by aligned interval records that are stored for the overlap computations. It may vary depending on how many alignments remain after filtering, the number of aligned reads, output formats and size of the reference database.
 
-* **Sample 1**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
+* **Sample 1**: ~ 70 million Illumina PE reads against ~ 70k reference genomes, ~ 1.7 million alignments 
 * **Sample 2**: ~ 80 million Illumina PE reads against ~ 70k reference genomes, ~ 63 million alignments 
 
 `.paf`
