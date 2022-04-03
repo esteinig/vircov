@@ -36,6 +36,7 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.regions,
         args.seq_len,
         args.coverage,
+        args.reads,
         &args.group_by,
         args.verbose,
     )?;

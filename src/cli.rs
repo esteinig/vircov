@@ -140,6 +140,13 @@ pub struct Cli {
     /// across reference sequences if results are grouped
     #[structopt(short = "c", long = "coverage", default_value = "0")]
     pub coverage: f64,
+    /// Minimum read threshold (unique reads in alignment)
+    ///
+    /// Filters results by a minimum reads in alignment; if results
+    /// are grouped this is done before the grouping stage to weed
+    /// out spurious alignments
+    #[structopt(short = "u", long = "reads", default_value = "0")]
+    pub reads: u64,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {

@@ -341,6 +341,7 @@ impl ReadAlignment {
         cov_reg: u64,
         seq_len: u64,
         coverage: f64,
+        reads: u64,
         group_by: &Option<String>,
         verbosity: u64,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
@@ -410,13 +411,17 @@ impl ReadAlignment {
                         .iter()
                         .map(|interval| interval.val.to_owned())
                         .unique()
-                        .count();
+                        .count() as u64;
 
-                    if target_len >= seq_len && target_cov_n >= cov_reg && target_cov >= coverage {
+                    if target_len >= seq_len
+                        && target_cov_n >= cov_reg
+                        && target_cov >= coverage
+                        && unique_reads >= reads
+                    {
                         coverage_fields.push(CoverageFields {
                             name: target_name.to_owned(),
                             regions: target_cov_n,
-                            reads: unique_reads as u64,
+                            reads: unique_reads,
                             alignments: targets.len() as u64,
                             bases: target_cov_bp,
                             length: target_len,
@@ -435,12 +440,13 @@ impl ReadAlignment {
                         .map(|interval| &interval.val)
                         .unique()
                         .collect::<Vec<&String>>();
+                    let unique_reads = unique_read_ids.len() as u64;
 
-                    if target_len >= seq_len {
+                    if target_len >= seq_len && unique_reads >= reads {
                         coverage_fields.push(CoverageFields {
                             name: target_name.to_owned(),
                             regions: target_cov_n,
-                            reads: unique_read_ids.len() as u64,
+                            reads: unique_reads,
                             alignments: targets.len() as u64,
                             bases: target_cov_bp,
                             length: target_len,
