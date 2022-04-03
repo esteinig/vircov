@@ -32,8 +32,40 @@ fn main() -> Result<(), ReadAlignmentError> {
         },
     };
 
-    let data = alignment.coverage_statistics(args.regions, args.seq_len, args.verbose)?;
-    alignment.to_console(&data, args.table)?;
+    let data = alignment.coverage_statistics(
+        args.regions,
+        args.seq_len,
+        args.coverage,
+        &args.group_by,
+        args.verbose,
+    )?;
+
+    match args.group_by {
+        None => {
+            alignment.to_console(&data, args.table)?;
+        }
+        Some(group_field) => {
+            match alignment.target_sequences {
+                None => return Err(ReadAlignmentError::GroupSequenceError()),
+                Some(_) => {
+                    match args.covplot {
+                        true => return Err(ReadAlignmentError::GroupCovPlotError()),
+                        false => {
+                            // If reference sequences have been provided, continue with grouping outputs
+                            let grouped_data = alignment.group_output(
+                                &data,
+                                args.regions,
+                                args.coverage,
+                                group_field,
+                                args.group_sep,
+                            )?;
+                            alignment.to_console(&grouped_data, args.table)?;
+                        }
+                    };
+                }
+            }
+        }
+    };
 
     match args.covplot {
         true => alignment.coverage_plots(&data, args.width)?,

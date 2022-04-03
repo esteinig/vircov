@@ -1,8 +1,8 @@
 use crate::covplot::CovPlot;
 use anyhow::Result;
-use bio::io::fasta;
 use crossterm::style::Color;
 use itertools::Itertools;
+use noodles::fasta::{Reader as FastaReader, Record as FastaRecord};
 use rust_htslib::bam::ext::BamRecordExtensions;
 use rust_htslib::{bam, bam::record::Cigar, bam::HeaderView, bam::Read};
 use rust_lapper::{Interval, Lapper};
@@ -32,7 +32,7 @@ pub enum ReadAlignmentError {
     FileIO(#[from] std::io::Error),
     /// Indicates a failure to get sequence length require for coverage plots
     #[error("failed to get sequence length for coverage plot")]
-    CovPlotSeqLength(),
+    CovPlotSeqLengthError(),
     /// Indicates failure with the coverage plot module
     #[error("failed to generate data for coverage plot")]
     CovPlot(#[from] crate::covplot::CovPlotError),
@@ -48,6 +48,12 @@ pub enum ReadAlignmentError {
     /// Indicates failure to parse an u64 from PAF
     #[error("failed to parse a valid integer from PAF")]
     PafRecordIntError(#[from] std::num::ParseIntError),
+    /// Indicates failure to conduct grouping because no reference sequences were parsed
+    #[error("failed to group outputs due to missing reference sequences")]
+    GroupSequenceError(),
+    /// Indicates failure to plot coverage when data is grouped
+    #[error("coverage plots are not enabled when grouping output")]
+    GroupCovPlotError(),
 }
 
 /*
@@ -60,16 +66,49 @@ fn display_coverage(cov: &f64) -> String {
     format!("{:.4}", cov)
 }
 
-fn display_tags(tags: &str) -> String {
-    match tags {
-        "" => "-".to_string(),
-        _ => tags.to_owned(),
+/// A struct for computed output fields
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoverageFields<'a> {
+    /// Name of the target sequence
+    name: String,
+    /// Number of non-overlapping alignment regions
+    regions: u64,
+    /// Number of unique reads aligned
+    reads: u64,
+    /// Number of alignments
+    alignments: u64,
+    /// Number of bases covered by alignments
+    bases: u64,
+    /// Length of the target sequence
+    length: u64,
+    /// Fractional coverage of the alignments
+    coverage: f64,
+    /// Descriptions of the reference sequence headers
+    description: String,
+    /// Tags for alignment regions in start:stop:aln format
+    tags: String,
+    /// Unique read identifiers for grouped operations
+    unique_reads: Vec<&'a String>,
+}
+
+impl CoverageFields<'_> {
+    fn as_tag(&self) -> String {
+        format!(
+            "{:}:{:}:{:}:{:}:{:}:{:}:{:}",
+            self.name,
+            self.regions,
+            self.reads,
+            self.alignments,
+            self.bases,
+            self.length,
+            self.coverage
+        )
     }
 }
 
-/// A struct for computed output fields
+/// A struct for computed output fields for display
 #[derive(Debug, Clone, PartialEq, Tabled)]
-pub struct CoverageFields {
+pub struct CoverageTableFields {
     #[header("Sequence")]
     /// Name of the target sequence
     name: String,
@@ -92,10 +131,30 @@ pub struct CoverageFields {
     #[field(display_with = "display_coverage")]
     /// Fractional coverage of the alignments
     coverage: f64,
-    /// Tags for alignment regions
+    /// Descriptions of the reference sequence headers
+    #[header("Description")]
+    description: String,
+    /// Tags for alignment regions in start:stop:aln format
     #[header("Tags")]
-    #[field(display_with = "display_tags")]
     tags: String,
+}
+
+impl CoverageTableFields {
+    /// Takes a coverage field and subsets it to fields
+    /// suitable for tabled output
+    pub fn from(coverage_fields: &CoverageFields) -> Self {
+        Self {
+            name: coverage_fields.name.clone(),
+            regions: coverage_fields.regions,
+            reads: coverage_fields.reads,
+            alignments: coverage_fields.alignments,
+            bases: coverage_fields.bases,
+            length: coverage_fields.length,
+            coverage: coverage_fields.coverage,
+            description: coverage_fields.description.clone(),
+            tags: coverage_fields.tags.clone(),
+        }
+    }
 }
 
 /*
@@ -110,17 +169,17 @@ type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 // with sequence name (key) and sequence record (value)
 fn parse_fasta(
     fasta: Option<PathBuf>,
-) -> Result<Option<HashMap<String, fasta::Record>>, ReadAlignmentError> {
+) -> Result<Option<HashMap<String, FastaRecord>>, ReadAlignmentError> {
     match fasta {
         Some(fasta_path) => {
-            let reader = File::open(fasta_path)
+            let mut reader = File::open(fasta_path)
                 .map(BufReader::new)
-                .map(fasta::Reader::new)?;
+                .map(FastaReader::new)?;
 
-            let mut lengths: HashMap<String, fasta::Record> = HashMap::new();
+            let mut lengths: HashMap<String, FastaRecord> = HashMap::new();
             for result in reader.records() {
                 let fasta_record = result?;
-                lengths.insert(fasta_record.id().to_string(), fasta_record);
+                lengths.insert(fasta_record.name().to_string(), fasta_record);
             }
             Ok(Some(lengths))
         }
@@ -134,7 +193,7 @@ pub struct ReadAlignment {
     /// PafRecords parsed from file (PAF)
     pub target_intervals: TargetIntervals,
     /// Reference sequence names and lengths from file (FASTA)
-    pub target_sequences: Option<HashMap<String, fasta::Record>>,
+    pub target_sequences: Option<HashMap<String, FastaRecord>>,
 }
 
 impl ReadAlignment {
@@ -173,14 +232,14 @@ impl ReadAlignment {
                         entry.get_mut().push(Interval {
                             start: record.tstart,
                             stop: record.tend,
-                            val: record.qname.clone(), // add the query read name here for reference, see if it affects performance
+                            val: record.qname, // add the query read name here for reference, see if it affects performance
                         });
                     }
                     Entry::Vacant(entry) => {
                         entry.insert(vec![Interval {
                             start: record.tstart,
                             stop: record.tend,
-                            val: record.qname.clone(),
+                            val: record.qname,
                         }]);
                     }
                 }
@@ -245,14 +304,14 @@ impl ReadAlignment {
                         entry.get_mut().push(Interval {
                             start: bam_record.tstart,
                             stop: bam_record.tend,
-                            val: bam_record.qname.clone(), // add the query read name here for reference, see if it affects performance
+                            val: bam_record.qname, // add the query read name here for reference, see if it affects performance
                         });
                     }
                     Entry::Vacant(entry) => {
                         entry.insert(vec![Interval {
                             start: bam_record.tstart,
                             stop: bam_record.tend,
-                            val: bam_record.qname.clone(),
+                            val: bam_record.qname,
                         }]);
                     }
                 }
@@ -281,6 +340,8 @@ impl ReadAlignment {
         &self,
         cov_reg: u64,
         seq_len: u64,
+        coverage: f64,
+        group_by: &Option<String>,
         verbosity: u64,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
         let mut coverage_fields: Vec<CoverageFields> = Vec::new();
@@ -295,11 +356,11 @@ impl ReadAlignment {
 
             let (target_cov, target_len) = match target_record {
                 None => (0_f64, 0_u64),
-                Some(fasta_record) => match fasta_record.seq().len() {
+                Some(fasta_record) => match fasta_record.sequence().len() {
                     0 => (0_f64, 0_u64),
                     _ => (
-                        target_cov_bp as f64 / fasta_record.seq().len() as f64,
-                        fasta_record.seq().len() as u64,
+                        target_cov_bp as f64 / fasta_record.sequence().len() as f64,
+                        fasta_record.sequence().len() as u64,
                     ),
                 },
             };
@@ -309,8 +370,8 @@ impl ReadAlignment {
 
             let target_cov_n = merged_targets.intervals.len() as u64;
 
-            let tags = match verbosity {
-                1 => {
+            let target_tags = match verbosity {
+                2 => {
                     // Get the merged target interval data [start:stop:count]
                     let merged_target_intervals = merged_targets
                         .depth()
@@ -326,27 +387,70 @@ impl ReadAlignment {
                         .collect::<Vec<String>>();
                     merged_target_interval_strings.join(" ")
                 }
-                _ => "".to_string(),
+                _ => "-".to_string(),
             };
 
-            // Get the number of unique reads in the alignments
-            let unique_reads: u64 = targets
-                .iter()
-                .map(|interval| interval.val.to_owned())
-                .unique()
-                .count() as u64;
+            let target_description = match (verbosity, group_by) {
+                (0, Some(_)) | (1, _) | (2, _) | (_, Some(_)) => match target_record {
+                    None => "-".to_string(),
+                    Some(fasta_record) => match fasta_record.description() {
+                        None => "-".to_string(),
+                        Some(descr) => descr.to_owned(),
+                    },
+                },
 
-            if target_len >= seq_len && target_cov_n >= cov_reg {
-                coverage_fields.push(CoverageFields {
-                    name: target_name.to_owned(),
-                    regions: target_cov_n,
-                    reads: unique_reads,
-                    alignments: targets.len() as u64,
-                    bases: target_cov_bp,
-                    length: target_len,
-                    coverage: target_cov,
-                    tags,
-                });
+                (_, None) => "-".to_string(),
+            };
+
+            match group_by {
+                // If we are not grouping, ignore read identifiers
+                None => {
+                    // Get the number of unique reads in the alignments
+                    let unique_reads = targets
+                        .iter()
+                        .map(|interval| interval.val.to_owned())
+                        .unique()
+                        .count();
+
+                    if target_len >= seq_len && target_cov_n >= cov_reg && target_cov >= coverage {
+                        coverage_fields.push(CoverageFields {
+                            name: target_name.to_owned(),
+                            regions: target_cov_n,
+                            reads: unique_reads as u64,
+                            alignments: targets.len() as u64,
+                            bases: target_cov_bp,
+                            length: target_len,
+                            coverage: target_cov,
+                            description: target_description,
+                            unique_reads: Vec::new(),
+                            tags: target_tags,
+                        });
+                    }
+                }
+                // If we are grouping, store the read identifiers to summarize for grouped outputs
+                Some(_) => {
+                    // Get the unique read identifiers in the alignments
+                    let unique_read_ids = targets
+                        .iter()
+                        .map(|interval| &interval.val)
+                        .unique()
+                        .collect::<Vec<&String>>();
+
+                    if target_len >= seq_len {
+                        coverage_fields.push(CoverageFields {
+                            name: target_name.to_owned(),
+                            regions: target_cov_n,
+                            reads: unique_read_ids.len() as u64,
+                            alignments: targets.len() as u64,
+                            bases: target_cov_bp,
+                            length: target_len,
+                            coverage: target_cov,
+                            description: target_description,
+                            unique_reads: unique_read_ids,
+                            tags: target_tags,
+                        });
+                    }
+                }
             }
         }
 
@@ -362,7 +466,11 @@ impl ReadAlignment {
     ) -> Result<(), ReadAlignmentError> {
         match table {
             true => {
-                let _table = Table::new(coverage_fields)
+                let table_fields = coverage_fields
+                    .iter()
+                    .map(|x| CoverageTableFields::from(x))
+                    .collect::<Vec<CoverageTableFields>>();
+                let _table = Table::new(table_fields)
                     .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
                     .with(Style::modern());
                 println!("{}", _table)
@@ -370,7 +478,7 @@ impl ReadAlignment {
             false => {
                 for cov_fields in coverage_fields {
                     println!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}",
+                        "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",
                         cov_fields.name,
                         cov_fields.regions,
                         cov_fields.reads,
@@ -378,6 +486,7 @@ impl ReadAlignment {
                         cov_fields.bases,
                         cov_fields.length,
                         cov_fields.coverage,
+                        cov_fields.description,
                         cov_fields.tags
                     )
                 }
@@ -401,14 +510,14 @@ impl ReadAlignment {
                 Some(seqs) => seqs.get(target_name),
             };
             let target_len = match target_record {
-                None => return Err(ReadAlignmentError::CovPlotSeqLength()),
-                Some(fasta_record) => fasta_record.seq().len() as u64,
+                None => return Err(ReadAlignmentError::CovPlotSeqLengthError()),
+                Some(fasta_record) => fasta_record.sequence().len() as u64,
             };
 
             if coverage_fields
                 .iter()
-                .map(|x| x.name.clone())
-                .any(|x| x == *target_name)
+                .map(|x| &x.name)
+                .any(|x| x == target_name)
             {
                 let covplot = CovPlot::new(targets, target_len, max_width)?;
                 covplot.to_console(target_name, target_len, Color::Red)?;
@@ -416,6 +525,89 @@ impl ReadAlignment {
         }
 
         Ok(())
+    }
+
+    pub fn group_output(
+        &self,
+        coverage_fields: &[CoverageFields],
+        cov_reg: u64,
+        coverage: f64,
+        group_by: String,
+        group_sep: String,
+    ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
+        let mut grouped_fields: BTreeMap<String, Vec<&CoverageFields>> = BTreeMap::new();
+
+        for cov_field in coverage_fields {
+            let groups = cov_field.description.split(&group_sep);
+
+            for group in groups {
+                if group.contains(&group_by) {
+                    match grouped_fields.entry(group.to_string()) {
+                        Entry::Occupied(mut entry) => {
+                            entry.get_mut().push(cov_field);
+                        }
+                        Entry::Vacant(entry) => {
+                            entry.insert(vec![&cov_field]);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut grouped_coverage_fields: Vec<CoverageFields> = Vec::new();
+        for (group, fields) in grouped_fields {
+            let mut grouped_fields = CoverageFields {
+                name: format!("{} ({})", group.trim().replace(&group_by, ""), fields.len()),
+                regions: 0,
+                reads: 0,
+                alignments: 0,
+                bases: 0,
+                length: 0,
+                coverage: 0.,
+                description: String::new(),
+                tags: String::new(),
+                unique_reads: Vec::new(),
+            };
+
+            let mut ureads = Vec::new();
+
+            for field in &fields {
+                grouped_fields.regions += field.regions;
+                grouped_fields.alignments += field.alignments;
+                grouped_fields.coverage += field.coverage;
+
+                if !grouped_fields.description.contains(&field.description) {
+                    grouped_fields.description.push_str(&field.description);
+                }
+
+                match field.tags.as_str() {
+                    "-" => {
+                        if !grouped_fields.tags.contains("-") {
+                            grouped_fields.tags.push_str("-");
+                        }
+                    }
+                    _ => {
+                        grouped_fields.tags.push_str(&field.as_tag());
+                        grouped_fields.tags.push_str(" ");
+                    }
+                }
+                for read in &field.unique_reads {
+                    ureads.push(read)
+                }
+            }
+
+            grouped_fields.coverage = grouped_fields.coverage / fields.len() as f64;
+
+            let reads = ureads.iter().unique().count();
+
+            grouped_fields.reads = reads as u64;
+
+            if grouped_fields.regions >= cov_reg && grouped_fields.coverage >= coverage {
+                grouped_coverage_fields.push(grouped_fields);
+            }
+        }
+
+        Ok(grouped_coverage_fields)
     }
 }
 
@@ -684,6 +876,7 @@ mod tests {
                         bases: 321,
                         length: 0,
                         coverage: 0.,
+                        description: "-".to_string(),
                         tags: "1786:1834:1 4538:4665:1 4758:4904:1".to_string(),
                     },
                     CoverageFields {
@@ -694,6 +887,7 @@ mod tests {
                         bases: 137,
                         length: 0,
                         coverage: 0.,
+                        description: "-".to_string(),
                         tags: "1574:1671:1 2188:2228:1".to_string(),
                     },
                 ],
@@ -706,7 +900,8 @@ mod tests {
                         bases: 321,
                         length: 0,
                         coverage: 0.,
-                        tags: "".to_string(),
+                        description: "-".to_string(),
+                        tags: "-".to_string(),
                     },
                     CoverageFields {
                         name: "21172389_LCMV_S-segment_final".to_string(),
@@ -716,7 +911,8 @@ mod tests {
                         bases: 137,
                         length: 0,
                         coverage: 0.,
-                        tags: "".to_string(),
+                        description: "-".to_string(),
+                        tags: "-".to_string(),
                     },
                 ],
                 paf_test_coverage_statistics_ref: vec![
@@ -728,6 +924,7 @@ mod tests {
                         bases: 321,
                         length: 7194,
                         coverage: 0.044620517097581316,
+                        description: "-".to_string(),
                         tags: "1786:1834:1 4538:4665:1 4758:4904:1".to_string(),
                     },
                     CoverageFields {
@@ -738,6 +935,7 @@ mod tests {
                         bases: 137,
                         length: 3407,
                         coverage: 0.040211329615497504,
+                        description: "-".to_string(),
                         tags: "1574:1671:1 2188:2228:1".to_string(),
                     },
                 ],
@@ -881,7 +1079,7 @@ mod tests {
         let test_cases = TestCases::new();
         let paf_aln =
             ReadAlignment::from_paf(test_cases.paf_test_file_ok, None, 0_u64, 0_f64, 0_u8).unwrap();
-        let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 2).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_no_ref
@@ -911,7 +1109,7 @@ mod tests {
             0_u8,
         )
         .unwrap();
-        let actual_statistics = paf_aln.coverage_statistics(0, 0, 1).unwrap();
+        let actual_statistics = paf_aln.coverage_statistics(0, 0, 2).unwrap();
         assert_eq!(
             actual_statistics,
             test_cases.paf_test_coverage_statistics_ref
@@ -922,18 +1120,6 @@ mod tests {
     fn tabled_helper_format_coverage_ok() {
         let expected = display_coverage(&0.333333333);
         assert_eq!("0.3333", expected);
-    }
-
-    #[test]
-    fn tabled_helper_format_tags_present_ok() {
-        let expected = display_tags("test_tags");
-        assert_eq!("test_tags".to_string(), expected);
-    }
-
-    #[test]
-    fn tabled_helper_format_tags_absent_ok() {
-        let expected = display_tags("");
-        assert_eq!("-".to_string(), expected);
     }
 
     #[test]

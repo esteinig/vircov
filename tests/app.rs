@@ -63,14 +63,15 @@ fn valid_output_string_no_filters() -> Result<(), Box<dyn std::error::Error>> {
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
-        "21172389_LCMV_L-segment_final\t3\t2\t3\t321\t7194\t0.0446\t\n21172389_LCMV_S-segment_final\t2\t2\t2\t137\t3407\t0.0402\t"
+        "21172389_LCMV_L-segment_final\t3\t2\t3\t321\t7194\t0.0446\t-\t-\n21172389_LCMV_S-segment_final\t2\t2\t2\t137\t3407\t0.0402\t-\t-"
     ));
 
     Ok(())
 }
 
 #[test]
-fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::error::Error>> {
+fn valid_output_string_default_filters_verbose_one_no_descr(
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin(env!("CARGO_PKG_NAME"))?;
     cmd.args(vec![
         "--paf",
@@ -81,7 +82,7 @@ fn valid_output_string_default_filters_verbose_one() -> Result<(), Box<dyn std::
     ]);
 
     cmd.assert().success().stdout(predicate::str::contains(
-        "21172389_LCMV_L-segment_final\t2\t1\t2\t273\t7194\t0.0379\t4538:4665:1 4758:4904:1",
+        "21172389_LCMV_L-segment_final\t2\t1\t2\t273\t7194\t0.0379\t-\t-",
     ));
 
     Ok(())
