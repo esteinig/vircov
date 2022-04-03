@@ -187,6 +187,23 @@ fn parse_fasta(
     }
 }
 
+fn parse_exclude(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, ReadAlignmentError> {
+    match exclude {
+        Some(_file) => {
+            let reader = File::open(_file).map(BufReader::new)?;
+
+            let mut exclude_vec: Vec<String> = Vec::new();
+
+            for line in reader.lines() {
+                exclude_vec.push(line?)
+            }
+
+            Ok(Some(exclude_vec))
+        }
+        None => Ok(None),
+    }
+}
+
 /// Paf struct
 #[derive(Debug, Clone)]
 pub struct ReadAlignment {
@@ -194,22 +211,35 @@ pub struct ReadAlignment {
     pub target_intervals: TargetIntervals,
     /// Reference sequence names and lengths from file (FASTA)
     pub target_sequences: Option<HashMap<String, FastaRecord>>,
+    /// Reference sequence description strings to exclude
+    pub target_exclude: Option<Vec<String>>,
 }
 
 impl ReadAlignment {
-    // Parse alignments from file
-    pub fn from_paf(
-        // Path to alignment file [PAF or "-"]
-        path: PathBuf,
+    pub fn new(
         // Reference sequence fasta file
         fasta: Option<PathBuf>,
+        // Reference sequence exclude file
+        exclude: Option<PathBuf>,
+    ) -> Result<Self, ReadAlignmentError> {
+        Ok(Self {
+            target_intervals: Vec::new(),
+            target_sequences: parse_fasta(fasta)?,
+            target_exclude: parse_exclude(exclude)?,
+        })
+    }
+    // Parse alignments from file
+    pub fn from_paf(
+        &mut self,
+        // Path to alignment file [PAF or "-"]
+        path: PathBuf,
         // Minimum query alignment length
         min_qaln_len: u64,
         // Minimum query coverage
         min_qaln_cov: f64,
         // Minimum mapping quality
         min_mapq: u8,
-    ) -> Result<Self, ReadAlignmentError> {
+    ) -> Result<&Self, ReadAlignmentError> {
         let reader: Box<dyn BufRead> = match path.file_name() {
             Some(os_str) => match os_str.to_str() {
                 Some("-") => Box::new(BufReader::new(std::io::stdin())),
@@ -251,30 +281,22 @@ impl ReadAlignment {
             .map(|entry| (entry.0, Lapper::new(entry.1)))
             .collect::<TargetIntervals>();
 
-        match parse_fasta(fasta)? {
-            None => Ok(Self {
-                target_intervals: target_lappers,
-                target_sequences: None,
-            }),
-            Some(fasta_records) => Ok(Self {
-                target_intervals: target_lappers,
-                target_sequences: Some(fasta_records),
-            }),
-        }
+        self.target_intervals = target_lappers;
+
+        Ok(self)
     }
     // Parse alignments from file
     pub fn from_bam(
+        &mut self,
         // Path to alignment file [SAM/BAM/CRAM or "-"]
         path: PathBuf,
-        // Reference sequence fasta file
-        fasta: Option<PathBuf>,
         // Minimum query alignment length
         min_qaln_len: u64,
         // Minimum query coverage
         min_qaln_cov: f64,
         // Minimum mapping quality
         min_mapq: u8,
-    ) -> Result<Self, ReadAlignmentError> {
+    ) -> Result<&Self, ReadAlignmentError> {
         let mut bam: bam::Reader = match path.file_name() {
             Some(os_str) => match os_str.to_str() {
                 Some("-") => bam::Reader::from_stdin()?,
@@ -323,16 +345,9 @@ impl ReadAlignment {
             .map(|entry| (entry.0, Lapper::new(entry.1)))
             .collect::<TargetIntervals>();
 
-        match parse_fasta(fasta)? {
-            None => Ok(Self {
-                target_intervals: target_lappers,
-                target_sequences: None,
-            }),
-            Some(fasta_records) => Ok(Self {
-                target_intervals: target_lappers,
-                target_sequences: Some(fasta_records),
-            }),
-        }
+        self.target_intervals = target_lappers;
+
+        Ok(self)
     }
 
     /// Compute coverage distribution by target sequence
@@ -403,6 +418,15 @@ impl ReadAlignment {
                 (_, None) => "-".to_string(),
             };
 
+            let target_description_decap = target_description.to_lowercase();
+
+            let exclude_target_sequence = match &self.target_exclude {
+                None => true,
+                Some(exclude_list) => exclude_list
+                    .iter()
+                    .any(|x| target_description_decap.contains(x)),
+            };
+
             match group_by {
                 // If we are not grouping, ignore read identifiers
                 None => {
@@ -417,6 +441,7 @@ impl ReadAlignment {
                         && target_cov_n >= cov_reg
                         && target_cov >= coverage
                         && unique_reads >= reads
+                        && !exclude_target_sequence
                     {
                         coverage_fields.push(CoverageFields {
                             name: target_name.to_owned(),
@@ -442,7 +467,7 @@ impl ReadAlignment {
                         .collect::<Vec<&String>>();
                     let unique_reads = unique_read_ids.len() as u64;
 
-                    if target_len >= seq_len && unique_reads >= reads {
+                    if target_len >= seq_len && unique_reads >= reads && !exclude_target_sequence {
                         coverage_fields.push(CoverageFields {
                             name: target_name.to_owned(),
                             regions: target_cov_n,

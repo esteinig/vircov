@@ -15,20 +15,13 @@ mod covplot;
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), ReadAlignmentError> {
     let args = Cli::from_args();
+    let mut alignment = ReadAlignment::new(args.fasta, args.exclude)?;
 
     let alignment = match args.paf {
-        Some(path) => {
-            ReadAlignment::from_paf(path, args.fasta, args.min_len, args.min_cov, args.min_mapq)?
-        }
+        Some(path) => alignment.from_paf(path, args.min_len, args.min_cov, args.min_mapq)?,
         None => match args.bam {
             None => return Err(ReadAlignmentError::FileInputError()),
-            Some(path) => ReadAlignment::from_bam(
-                path,
-                args.fasta,
-                args.min_len,
-                args.min_cov,
-                args.min_mapq,
-            )?,
+            Some(path) => alignment.from_bam(path, args.min_len, args.min_cov, args.min_mapq)?,
         },
     };
 
