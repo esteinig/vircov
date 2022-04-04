@@ -421,7 +421,7 @@ impl ReadAlignment {
             let target_description_decap = target_description.to_lowercase();
 
             let exclude_target_sequence = match &self.target_exclude {
-                None => true,
+                None => false,
                 Some(exclude_list) => exclude_list
                     .iter()
                     .any(|x| target_description_decap.contains(x)),

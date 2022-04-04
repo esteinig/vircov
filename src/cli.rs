@@ -36,7 +36,7 @@ pub struct Cli {
     /// Filters (&) alignments by minimum length of the aligned query sequence,
     /// which corresponds to the difference between query alignment end and
     /// start positions.
-    #[structopt(long, default_value = "50")]
+    #[structopt(long, default_value = "0")]
     pub min_len: u64,
     /// Minimum coverage of the aligned query sequence
     ///
@@ -48,7 +48,7 @@ pub struct Cli {
     /// Minimum mapping quality of the alignment
     ///
     /// Filters (&) alignments by a minimum mapping quality.
-    #[structopt(long, default_value = "30")]
+    #[structopt(long, default_value = "0")]
     pub min_mapq: u8,
     /// Verbose output statistics  
     ///
