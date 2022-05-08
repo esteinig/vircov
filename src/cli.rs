@@ -1,29 +1,33 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
-use structopt::{clap::ArgGroup, StructOpt};
+use structopt::StructOpt;
 
 // Vircov command-line client
 #[derive(Debug, StructOpt)]
-#[structopt(name = "vircov", group = ArgGroup::with_name("alignment").required(true))]
+#[structopt(name = "vircov")]
 pub struct Cli {
-    /// Alignment file (PAF, "-" for STDIN)
-    ///
-    /// Alignment input file in PAF format (minimap2)
+    /// Alignment file (SAM/BAM/CRAM/PAF)
     #[structopt(
-        short, long, parse(try_from_os_str = check_file_exists), group = "alignment"
+        short, long, parse(try_from_os_str = check_file_exists), required = true
     )]
-    pub paf: Option<PathBuf>,
-    /// Alignment file (SAM/BAM/CRAM, "-" for STDIN)
+    pub alignment: PathBuf,
+    /// bam: SAM/BAM/CRAM alignment; paf: PAF alignment
     ///
-    /// Alignment input file in SAM/BAM/CRAM format
+    /// Default is to attempt to infer the input alignment format automatically from the filename
+    /// extension (bam|sam|cram|paf). This option is used to override that.
     #[structopt(
-        short, long, parse(try_from_os_str = check_file_exists), group = "alignment"
+        short = "A",
+        long,
+        value_name = "bam|paf",
+        possible_values = &["bam", "paf"],
+        case_insensitive=true,
+        hide_possible_values=true
     )]
-    pub bam: Option<PathBuf>,
+    pub alignment_format: Option<String>,
     /// Reference sequences in FASTA format [default: None]
     ///
     /// If the input format is PAF, computation of the total coverage
-    /// against each target sequence requires sequence lengths. Should
+    /// against each target sequence requires sequence lengths. Must
     /// be the same reference file as used for the alignment.
     #[structopt(
         short = "f",
@@ -136,10 +140,21 @@ pub struct Cli {
     pub regions: u64,
     /// Minimum coverage threshold (fraction)
     ///
-    /// Filters results by a minimum coverage or average coverage
-    /// across reference sequences if results are grouped
+    /// Filters results by a minimum coverage across the reference sequence
     #[structopt(short = "c", long = "coverage", default_value = "0")]
     pub coverage: f64,
+    /// Minimum number of grouped coverage regions
+    ///
+    /// Filters results by a minimum number of grouped coverage regions, can be
+    /// used in addition to the pre-grouping coverage region filter
+    #[structopt(long, default_value = "0")]
+    pub group_regions: u64,
+    /// Minimum grouped coverage threshold (fraction)
+    ///
+    /// Filters results by a minimum average coverage
+    /// across reference sequences if results are grouped
+    #[structopt(long, default_value = "0")]
+    pub group_coverage: f64,
     /// Minimum read threshold (unique reads in alignment)
     ///
     /// Filters results by a minimum reads in alignment; if results

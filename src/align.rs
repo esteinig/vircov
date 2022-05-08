@@ -54,6 +54,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure to plot coverage when data is grouped
     #[error("coverage plots are not enabled when grouping output")]
     GroupCovPlotError(),
+    /// Indicates failure to infer or identify file format from explicit option
+    #[error("failed to parse a valid input format")]
+    InputFormatError(),
 }
 
 /*
@@ -227,6 +230,35 @@ impl ReadAlignment {
             target_sequences: parse_fasta(fasta)?,
             target_exclude: parse_exclude(exclude)?,
         })
+    }
+    // Parse alignment by inferring format from file extension
+    pub fn from(
+        &mut self,
+        // Path to alignment file [PAF or "-"]
+        path: PathBuf,
+        // Minimum query alignment length
+        min_qaln_len: u64,
+        // Minimum query coverage
+        min_qaln_cov: f64,
+        // Minimum mapping quality
+        min_mapq: u8,
+        // Explicit alignment format
+        alignment_format: Option<String>,
+    ) -> Result<&Self, ReadAlignmentError> {
+        match alignment_format {
+            Some(format) => match format.as_str() {
+                "bam" => self.from_bam(path, min_qaln_len, min_qaln_cov, min_mapq),
+                "paf" => self.from_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
+                _ => Err(ReadAlignmentError::InputFormatError()),
+            },
+            None => match path.extension().map(|s| s.to_str()) {
+                Some(Some("paf")) => self.from_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
+                Some(Some("bam") | Some("sam") | Some("cram")) => {
+                    self.from_bam(path, min_qaln_len, min_qaln_cov, min_mapq)
+                }
+                _ => Err(ReadAlignmentError::InputFormatError()),
+            },
+        }
     }
     // Parse alignments from file
     pub fn from_paf(
@@ -467,7 +499,12 @@ impl ReadAlignment {
                         .collect::<Vec<&String>>();
                     let unique_reads = unique_read_ids.len() as u64;
 
-                    if target_len >= seq_len && unique_reads >= reads && !exclude_target_sequence {
+                    if target_len >= seq_len
+                        && target_cov_n >= cov_reg
+                        && unique_reads >= reads
+                        && target_cov >= coverage
+                        && !exclude_target_sequence
+                    {
                         coverage_fields.push(CoverageFields {
                             name: target_name.to_owned(),
                             regions: target_cov_n,
@@ -561,8 +598,8 @@ impl ReadAlignment {
     pub fn group_output(
         &self,
         coverage_fields: &[CoverageFields],
-        cov_reg: u64,
-        coverage: f64,
+        grouped_regions: u64,
+        grouped_coverage: f64,
         group_by: String,
         group_sep: String,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
@@ -609,6 +646,7 @@ impl ReadAlignment {
 
                 if !grouped_fields.description.contains(&field.description) {
                     grouped_fields.description.push_str(&field.description);
+                    grouped_fields.description.push_str(" ");
                 }
 
                 match field.tags.as_str() {
@@ -633,7 +671,9 @@ impl ReadAlignment {
 
             grouped_fields.reads = reads as u64;
 
-            if grouped_fields.regions >= cov_reg && grouped_fields.coverage >= coverage {
+            if grouped_fields.regions >= grouped_regions
+                && grouped_fields.coverage >= grouped_coverage
+            {
                 grouped_coverage_fields.push(grouped_fields);
             }
         }

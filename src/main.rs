@@ -17,13 +17,13 @@ fn main() -> Result<(), ReadAlignmentError> {
     let args = Cli::from_args();
     let mut alignment = ReadAlignment::new(args.fasta, args.exclude)?;
 
-    let alignment = match args.paf {
-        Some(path) => alignment.from_paf(path, args.min_len, args.min_cov, args.min_mapq)?,
-        None => match args.bam {
-            None => return Err(ReadAlignmentError::FileInputError()),
-            Some(path) => alignment.from_bam(path, args.min_len, args.min_cov, args.min_mapq)?,
-        },
-    };
+    let alignment = alignment.from(
+        args.alignment,
+        args.min_len,
+        args.min_cov,
+        args.min_mapq,
+        args.alignment_format,
+    )?;
 
     let data = alignment.coverage_statistics(
         args.regions,
@@ -48,8 +48,8 @@ fn main() -> Result<(), ReadAlignmentError> {
                             // If reference sequences have been provided, continue with grouping outputs
                             let grouped_data = alignment.group_output(
                                 &data,
-                                args.regions,
-                                args.coverage,
+                                args.group_regions,
+                                args.group_coverage,
                                 group_field,
                                 args.group_sep,
                             )?;
