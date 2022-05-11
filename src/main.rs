@@ -36,7 +36,7 @@ fn main() -> Result<(), ReadAlignmentError> {
 
     match args.group_by {
         None => {
-            alignment.to_console(&data, args.table)?;
+            alignment.to_output(&data, args.table, args.read_ids)?;
         }
         Some(group_field) => {
             match alignment.target_sequences {
@@ -53,7 +53,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 group_field,
                                 args.group_sep,
                             )?;
-                            alignment.to_console(&grouped_data, args.table)?;
+                            alignment.to_output(&grouped_data, args.table, args.read_ids)?;
                         }
                     };
                 }

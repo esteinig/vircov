@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::str::from_utf8;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
+use std::io::Write;
 
 /*
 ========================
@@ -71,7 +72,7 @@ fn display_coverage(cov: &f64) -> String {
 
 /// A struct for computed output fields
 #[derive(Debug, Clone, PartialEq)]
-pub struct CoverageFields<'a> {
+pub struct CoverageFields {
     /// Name of the target sequence
     name: String,
     /// Number of non-overlapping alignment regions
@@ -91,10 +92,10 @@ pub struct CoverageFields<'a> {
     /// Tags for alignment regions in start:stop:aln format
     tags: String,
     /// Unique read identifiers for grouped operations
-    unique_reads: Vec<&'a String>,
+    unique_reads: Vec<String>,
 }
 
-impl CoverageFields<'_> {
+impl CoverageFields {
     fn as_tag(&self) -> String {
         format!(
             "{:}:{:}:{:}:{:}:{:}:{:}:{:}",
@@ -459,67 +460,33 @@ impl ReadAlignment {
                     .any(|x| target_description_decap.contains(x)),
             };
 
-            match group_by {
-                // If we are not grouping, ignore read identifiers
-                None => {
-                    // Get the number of unique reads in the alignments
-                    let unique_reads = targets
-                        .iter()
-                        .map(|interval| interval.val.to_owned())
-                        .unique()
-                        .count() as u64;
+            let unique_read_ids: Vec<String> = targets
+                .iter()
+                .map(|interval| interval.val.to_string())
+                .unique()
+                .collect::<Vec<String>>();
 
-                    if target_len >= seq_len
+            let unique_reads_n = unique_read_ids.len() as u64;
+
+            if target_len >= seq_len
                         && target_cov_n >= cov_reg
                         && target_cov >= coverage
-                        && unique_reads >= reads
+                        && unique_reads_n >= reads
                         && !exclude_target_sequence
-                    {
-                        coverage_fields.push(CoverageFields {
-                            name: target_name.to_owned(),
-                            regions: target_cov_n,
-                            reads: unique_reads,
-                            alignments: targets.len() as u64,
-                            bases: target_cov_bp,
-                            length: target_len,
-                            coverage: target_cov,
-                            description: target_description,
-                            unique_reads: Vec::new(),
-                            tags: target_tags,
-                        });
-                    }
+                {
+                    coverage_fields.push(CoverageFields {
+                        name: target_name.to_owned(),
+                        regions: target_cov_n,
+                        reads: unique_reads_n,
+                        alignments: targets.len() as u64,
+                        bases: target_cov_bp,
+                        length: target_len,
+                        coverage: target_cov,
+                        description: target_description,
+                        unique_reads: unique_read_ids,
+                        tags: target_tags,
+                    });
                 }
-                // If we are grouping, store the read identifiers to summarize for grouped outputs
-                Some(_) => {
-                    // Get the unique read identifiers in the alignments
-                    let unique_read_ids = targets
-                        .iter()
-                        .map(|interval| &interval.val)
-                        .unique()
-                        .collect::<Vec<&String>>();
-                    let unique_reads = unique_read_ids.len() as u64;
-
-                    if target_len >= seq_len
-                        && target_cov_n >= cov_reg
-                        && unique_reads >= reads
-                        && target_cov >= coverage
-                        && !exclude_target_sequence
-                    {
-                        coverage_fields.push(CoverageFields {
-                            name: target_name.to_owned(),
-                            regions: target_cov_n,
-                            reads: unique_reads,
-                            alignments: targets.len() as u64,
-                            bases: target_cov_bp,
-                            length: target_len,
-                            coverage: target_cov,
-                            description: target_description,
-                            unique_reads: unique_read_ids,
-                            tags: target_tags,
-                        });
-                    }
-                }
-            }
         }
 
         Ok(coverage_fields)
@@ -527,10 +494,11 @@ impl ReadAlignment {
 
     #[cfg(not(tarpaulin_include))]
     /// Print the coverage statistics to console, alternatively in pretty table format
-    pub fn to_console(
+    pub fn to_output(
         &self,
         coverage_fields: &[CoverageFields],
         table: bool,
+        read_ids: Option<PathBuf>,
     ) -> Result<(), ReadAlignmentError> {
         match table {
             true => {
@@ -561,9 +529,24 @@ impl ReadAlignment {
             }
         }
 
+        match read_ids {
+            Some(path) => {
+                let mut file_handle = File::create(&path)?;
+                
+                let all_unique_read_ids: Vec<String> = coverage_fields.iter().flat_map(
+                    |field| field.unique_reads.to_owned()
+                ).unique().collect();
+                
+                for read_id in all_unique_read_ids {
+                    write!(file_handle, "{}\n", &read_id)?;
+                }
+            },
+            None => {}
+        }
+
+
         Ok(())
     }
-
     #[cfg(not(tarpaulin_include))]
     /// Print the coverage distributions to console as a text-based coverage plot
     pub fn coverage_plots(
@@ -637,7 +620,7 @@ impl ReadAlignment {
                 unique_reads: Vec::new(),
             };
 
-            let mut ureads = Vec::new();
+            let mut ureads: Vec<String> = Vec::new();
 
             for field in &fields {
                 grouped_fields.regions += field.regions;
@@ -661,15 +644,17 @@ impl ReadAlignment {
                     }
                 }
                 for read in &field.unique_reads {
-                    ureads.push(read)
+                    ureads.push(read.to_string())
                 }
+
             }
 
             grouped_fields.coverage = grouped_fields.coverage / fields.len() as f64;
 
-            let reads = ureads.iter().unique().count();
+            let unique_reads_grouped: Vec<String> = ureads.iter().unique().map(|x| x.to_string()).collect();
 
-            grouped_fields.reads = reads as u64;
+            grouped_fields.reads = unique_reads_grouped.len() as u64;
+            grouped_fields.unique_reads = unique_reads_grouped;
 
             if grouped_fields.regions >= grouped_regions
                 && grouped_fields.coverage >= grouped_coverage

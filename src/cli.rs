@@ -40,19 +40,19 @@ pub struct Cli {
     /// Filters (&) alignments by minimum length of the aligned query sequence,
     /// which corresponds to the difference between query alignment end and
     /// start positions.
-    #[structopt(long, default_value = "0")]
+    #[structopt(short = "L", long, default_value = "0")]
     pub min_len: u64,
     /// Minimum coverage of the aligned query sequence
     ///
     /// Filters (&) alignments by minimum proportion of the query sequence involved
     /// in the alignment which corresponds to division of the length of the
     /// aligned query sequence by the length of the query sequence.
-    #[structopt(long, default_value = "0")]
+    #[structopt(short = "C", long, default_value = "0")]
     pub min_cov: f64,
     /// Minimum mapping quality of the alignment
     ///
     /// Filters (&) alignments by a minimum mapping quality.
-    #[structopt(long, default_value = "0")]
+    #[structopt(short = "M", long, default_value = "0")]
     pub min_mapq: u8,
     /// Verbose output statistics  
     ///
@@ -138,6 +138,13 @@ pub struct Cli {
     /// primary output to determine a positive hit.
     #[structopt(short = "r", long = "regions", default_value = "0")]
     pub regions: u64,
+    /// Minimum read threshold (unique reads in alignment)
+    ///
+    /// Filters results by a minimum reads in alignment; if results
+    /// are grouped this is done before the grouping stage to weed
+    /// out spurious alignments
+    #[structopt(short = "u", long = "reads", default_value = "0")]
+    pub reads: u64,
     /// Minimum coverage threshold (fraction)
     ///
     /// Filters results by a minimum coverage across the reference sequence
@@ -155,13 +162,13 @@ pub struct Cli {
     /// across reference sequences if results are grouped
     #[structopt(long, default_value = "0")]
     pub group_coverage: f64,
-    /// Minimum read threshold (unique reads in alignment)
+    /// Output read identifiers of aligned reads to file
     ///
-    /// Filters results by a minimum reads in alignment; if results
-    /// are grouped this is done before the grouping stage to weed
-    /// out spurious alignments
-    #[structopt(short = "u", long = "reads", default_value = "0")]
-    pub reads: u64,
+    /// Creates a file that contains the (unique) identifiers
+    /// of all reads that passed the alignment and coverage 
+    /// filters (i.e. those involved in the table outputs)
+    #[structopt(short = "O", long = "read-ids")]
+    pub read_ids: Option<PathBuf>,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
