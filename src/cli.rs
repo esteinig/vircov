@@ -208,30 +208,4 @@ mod tests {
     fn file_check_not_exist() {
         check_file_exists(OsStr::new("tests/cases/no_bueno.paf")).unwrap();
     }
-
-    #[test]
-    fn verbosity_exceeds_limit() {
-        let passed_args = vec!["metacov", "-vvv", "--paf", "tests/cases/test_ok.paf"];
-        let args = Cli::from_iter_safe(passed_args);
-        let actual = args.unwrap().verbose;
-        let expected = 2;
-        assert_eq!(actual, expected)
-    }
-
-    #[test]
-    fn valid_verbosity_level() {
-        let passed_args = vec!["metacov", "-v", "--paf", "tests/cases/test_ok.paf"];
-        let args = Cli::from_iter_safe(passed_args);
-        let actual = args.unwrap().verbose;
-        let expected = 1;
-        assert_eq!(actual, expected)
-    }
-
-    #[test]
-    fn verbosity_from_occurrences() {
-        assert_eq!(parse_verbosity(0), 0);
-        assert_eq!(parse_verbosity(1), 1);
-        assert_eq!(parse_verbosity(2), 2);
-        assert_eq!(parse_verbosity(666), 2);
-    }
 }
