@@ -10,12 +10,12 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 use std::fs::File;
+use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::from_utf8;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
-use std::io::Write;
 
 /*
 ========================
@@ -469,24 +469,24 @@ impl ReadAlignment {
             let unique_reads_n = unique_read_ids.len() as u64;
 
             if target_len >= seq_len
-                        && target_cov_n >= cov_reg
-                        && target_cov >= coverage
-                        && unique_reads_n >= reads
-                        && !exclude_target_sequence
-                {
-                    coverage_fields.push(CoverageFields {
-                        name: target_name.to_owned(),
-                        regions: target_cov_n,
-                        reads: unique_reads_n,
-                        alignments: targets.len() as u64,
-                        bases: target_cov_bp,
-                        length: target_len,
-                        coverage: target_cov,
-                        description: target_description,
-                        unique_reads: unique_read_ids,
-                        tags: target_tags,
-                    });
-                }
+                && target_cov_n >= cov_reg
+                && target_cov >= coverage
+                && unique_reads_n >= reads
+                && !exclude_target_sequence
+            {
+                coverage_fields.push(CoverageFields {
+                    name: target_name.to_owned(),
+                    regions: target_cov_n,
+                    reads: unique_reads_n,
+                    alignments: targets.len() as u64,
+                    bases: target_cov_bp,
+                    length: target_len,
+                    coverage: target_cov,
+                    description: target_description,
+                    unique_reads: unique_read_ids,
+                    tags: target_tags,
+                });
+            }
         }
 
         Ok(coverage_fields)
@@ -532,18 +532,19 @@ impl ReadAlignment {
         match read_ids {
             Some(path) => {
                 let mut file_handle = File::create(&path)?;
-                
-                let all_unique_read_ids: Vec<String> = coverage_fields.iter().flat_map(
-                    |field| field.unique_reads.to_owned()
-                ).unique().collect();
-                
+
+                let all_unique_read_ids: Vec<String> = coverage_fields
+                    .iter()
+                    .flat_map(|field| field.unique_reads.to_owned())
+                    .unique()
+                    .collect();
+
                 for read_id in all_unique_read_ids {
                     write!(file_handle, "{}\n", &read_id)?;
                 }
-            },
+            }
             None => {}
         }
-
 
         Ok(())
     }
@@ -646,12 +647,12 @@ impl ReadAlignment {
                 for read in &field.unique_reads {
                     ureads.push(read.to_string())
                 }
-
             }
 
             grouped_fields.coverage = grouped_fields.coverage / fields.len() as f64;
 
-            let unique_reads_grouped: Vec<String> = ureads.iter().unique().map(|x| x.to_string()).collect();
+            let unique_reads_grouped: Vec<String> =
+                ureads.iter().unique().map(|x| x.to_string()).collect();
 
             grouped_fields.reads = unique_reads_grouped.len() as u64;
             grouped_fields.unique_reads = unique_reads_grouped;

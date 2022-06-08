@@ -4,7 +4,7 @@ use structopt::StructOpt;
 
 // Vircov command-line client
 #[derive(Debug, StructOpt)]
-#[structopt(name = "vircov")]
+#[structopt(name = "metacov")]
 pub struct Cli {
     /// Alignment file (SAM/BAM/CRAM/PAF)
     #[structopt(
@@ -60,13 +60,13 @@ pub struct Cli {
     /// corresponding to the number of inferred alignment coverage regions.
     /// Tag fields are separated by semicolons.
     ///
-    /// When no grouping argument is given then each tag consists of:
+    /// When no grouping argument is given then each tag consists of
     ///     : start of coverage region
     ///     : end of coverage region
     ///     : number of alignments in the region
     ///
     /// When the output is grouped, then each tag consists of data from each
-    /// output that has been grouped:
+    /// output that has been grouped
     ///     : name of reference sequence
     ///     : number of regions
     ///     : number of reads in region
@@ -165,7 +165,7 @@ pub struct Cli {
     /// Output read identifiers of aligned reads to file
     ///
     /// Creates a file that contains the (unique) identifiers
-    /// of all reads that passed the alignment and coverage 
+    /// of all reads that passed the alignment and coverage
     /// filters (i.e. those involved in the table outputs)
     #[structopt(short = "O", long = "read-ids")]
     pub read_ids: Option<PathBuf>,
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn verbosity_exceeds_limit() {
-        let passed_args = vec!["vircov", "-vvv", "--paf", "tests/cases/test_ok.paf"];
+        let passed_args = vec!["metacov", "-vvv", "--paf", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
         let actual = args.unwrap().verbose;
         let expected = 2;
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn valid_verbosity_level() {
-        let passed_args = vec!["vircov", "-v", "--paf", "tests/cases/test_ok.paf"];
+        let passed_args = vec!["metacov", "-v", "--paf", "tests/cases/test_ok.paf"];
         let args = Cli::from_iter_safe(passed_args);
         let actual = args.unwrap().verbose;
         let expected = 1;
