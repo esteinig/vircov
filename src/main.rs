@@ -1,9 +1,8 @@
-use anyhow::Result;
-use structopt::StructOpt;
-
 use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::cli::Cli;
 use crate::cli::Commands::Vircov;
+use anyhow::Result;
+use structopt::StructOpt;
 
 mod align;
 mod cli;
@@ -38,6 +37,7 @@ fn main() -> Result<(), ReadAlignmentError> {
             group_coverage,
             group_sep,
             width,
+            read_ids_split,
         } => {
             let mut _alignment = ReadAlignment::new(fasta, exclude)?;
 
@@ -49,7 +49,7 @@ fn main() -> Result<(), ReadAlignmentError> {
 
             match group_by {
                 None => {
-                    alignment.to_output(&data, table, read_ids)?;
+                    alignment.to_output(&data, table, read_ids, read_ids_split)?;
                 }
                 Some(group_field) => {
                     match alignment.target_sequences {
@@ -66,7 +66,12 @@ fn main() -> Result<(), ReadAlignmentError> {
                                         group_field,
                                         group_sep,
                                     )?;
-                                    alignment.to_output(&grouped_data, table, read_ids)?;
+                                    alignment.to_output(
+                                        &grouped_data,
+                                        table,
+                                        read_ids,
+                                        read_ids_split,
+                                    )?;
                                 }
                             };
                         }
@@ -80,5 +85,6 @@ fn main() -> Result<(), ReadAlignmentError> {
             }
         }
     }
+
     Ok(())
 }

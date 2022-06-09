@@ -171,11 +171,19 @@ pub enum Commands {
         group_coverage: f64,
         /// Output read identifiers of aligned reads to file
         ///
-        /// Creates a file that contains the (unique) identifiers
+        /// Creates a file (.txt) that contains the (unique) identifiers
         /// of all reads that passed the alignment and coverage
         /// filters (i.e. those involved in the table outputs)
         #[structopt(short = "O", long = "read-ids")]
         read_ids: Option<PathBuf>,
+        /// Output read identifiers per genome or grouped genomes to file
+        ///
+        /// Creates a directory with a file (.txt) for each genome or group
+        /// that contains the (unique) identifiers of all reads that passed
+        /// the alignment and coverage filters (i.e. those involved in the
+        /// table outputs)
+        #[structopt(short = "S", long = "read-ids-split")]
+        read_ids_split: Option<PathBuf>,
     },
 }
 

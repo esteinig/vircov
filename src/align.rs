@@ -92,7 +92,7 @@ pub struct CoverageFields {
     /// Tags for alignment regions in start:stop:aln format
     tags: String,
     /// Unique read identifiers for grouped operations
-    unique_reads: Vec<String>,
+    pub unique_reads: Vec<String>,
 }
 
 impl CoverageFields {
@@ -499,6 +499,7 @@ impl ReadAlignment {
         coverage_fields: &[CoverageFields],
         table: bool,
         read_ids: Option<PathBuf>,
+        read_ids_split: Option<PathBuf>,
     ) -> Result<(), ReadAlignmentError> {
         match table {
             true => {
@@ -529,18 +530,37 @@ impl ReadAlignment {
             }
         }
 
+        // Non grouped data unique read outputs + grouped
+
         match read_ids {
             Some(path) => {
                 let mut file_handle = File::create(&path)?;
 
-                let all_unique_read_ids: Vec<String> = coverage_fields
+                let all_unique_read_ids: Vec<String> = coverage_fields // TODO: using only non-grouped right now (but should be both, need to filter output)
                     .iter()
-                    .flat_map(|field| field.unique_reads.to_owned())
+                    .flat_map(|field| field.unique_reads.to_owned()) // in case it is grouped
                     .unique()
                     .collect();
 
                 for read_id in all_unique_read_ids {
                     write!(file_handle, "{}\n", &read_id)?;
+                }
+            }
+            None => {}
+        }
+
+        match read_ids_split {
+            Some(path) => {
+                std::fs::create_dir_all(&path)?;
+                for field in coverage_fields {
+                    let file_name =
+                        &path.join(format!("{}{}", field.name.replace(" ", "_"), ".txt"));
+                    let mut file_handle = File::create(file_name)
+                        .expect(&format!("Could not create file {:?}", &file_name));
+                    for read_id in field.unique_reads.iter() {
+                        write!(file_handle, "{}\n", &read_id)
+                            .expect(&format!("Could not write read id {}", &read_id));
+                    }
                 }
             }
             None => {}
