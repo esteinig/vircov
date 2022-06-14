@@ -17,7 +17,7 @@ pub enum Commands {
         #[structopt(
             short, long, parse(try_from_os_str = check_file_exists), required = true
         )]
-        alignment: PathBuf,
+        alignment: PathBuf, // TODO
         /// bam: SAM/BAM/CRAM alignment; paf: PAF alignment
         ///
         /// Default is to attempt to infer the input alignment format automatically from the filename
@@ -184,6 +184,23 @@ pub enum Commands {
         /// table outputs)
         #[structopt(short = "S", long = "read-ids-split")]
         read_ids_split: Option<PathBuf>,
+        /// Output a single reference for a grouped coverage assessment
+        ///
+        /// Creates a directory with a file (.fasta) for a selected genome
+        /// from a grouped (e.g. species / taxid) coverage assessment using
+        /// a selection criterion as outlined in --group-select-by  
+        #[structopt(short = "R", long = "group-select-split")]
+        group_select_split: Option<PathBuf>,
+        /// Select a representative genome from the groups by max reads [or cov - todo]
+        #[structopt(
+            short = "B", 
+            long = "group-select-by",
+            value_name = "reads",
+            possible_values = &["reads"],
+            case_insensitive=true,
+            hide_possible_values=true
+    )]
+        group_select_by: Option<String>,
     },
 }
 

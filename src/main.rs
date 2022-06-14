@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+
 use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::cli::Cli;
 use crate::cli::Commands::Vircov;
@@ -38,39 +40,47 @@ fn main() -> Result<(), ReadAlignmentError> {
             group_sep,
             width,
             read_ids_split,
+            group_select_by,
+            group_select_split,
         } => {
-            let mut _alignment = ReadAlignment::new(fasta, exclude)?;
+            let verbose = match group_select_split {
+                Some(_) => 2, // for group refseq selection we need the tags
+                None => verbose,
+            };
 
-            let alignment =
-                _alignment.from(alignment, min_len, min_cov, min_mapq, alignment_format)?;
+            let mut align = ReadAlignment::new(&fasta, &exclude)?;
 
-            let data = alignment
-                .coverage_statistics(regions, seq_len, coverage, reads, &group_by, verbose)?;
+            let align = align.from(alignment, min_len, min_cov, min_mapq, alignment_format)?;
+
+            let data =
+                align.coverage_statistics(regions, seq_len, coverage, reads, &group_by, verbose)?;
 
             match group_by {
                 None => {
-                    alignment.to_output(&data, table, read_ids, read_ids_split)?;
+                    align.to_output(&data, table, read_ids, read_ids_split, None, None)?;
                 }
                 Some(group_field) => {
-                    match alignment.target_sequences {
+                    match align.target_sequences {
                         None => return Err(ReadAlignmentError::GroupSequenceError()),
                         Some(_) => {
                             match covplot {
                                 true => return Err(ReadAlignmentError::GroupCovPlotError()),
                                 false => {
                                     // If reference sequences have been provided, continue with grouping outputs
-                                    let grouped_data = alignment.group_output(
+                                    let grouped_data = align.group_output(
                                         &data,
                                         group_regions,
                                         group_coverage,
                                         group_field,
                                         group_sep,
                                     )?;
-                                    alignment.to_output(
+                                    align.to_output(
                                         &grouped_data,
                                         table,
                                         read_ids,
                                         read_ids_split,
+                                        group_select_by,
+                                        group_select_split,
                                     )?;
                                 }
                             };
@@ -80,7 +90,7 @@ fn main() -> Result<(), ReadAlignmentError> {
             };
 
             match covplot {
-                true => alignment.coverage_plots(&data, width)?,
+                true => align.coverage_plots(&data, width)?,
                 false => {}
             }
         }

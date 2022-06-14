@@ -1,7 +1,7 @@
 [package]
 rust-version = "1.58"
 name = "metacov"
-version = "0.4.0"
+version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
 description = "Metacov: genome coverage tools for metagenomic diagnostics"
 documentation = "https://github.com/esteinig/metacov"
