@@ -608,40 +608,35 @@ impl ReadAlignment {
 
                             // Virosaurus config
 
-                            // If segmented (multiple "segment="" in description of coverage field taht are not "segment-N/A")
+                            // If segmented (multiple "segment="" in description of coverage field that are not "segment=N/A")
                             // combine all into multi-fasta, otherwise select best by read.
                             let segment_tag_count =
                                 cov_field.description.matches("segment=").count();
                             let segment_tag_na_count =
                                 cov_field.description.matches("segment=N/A").count();
 
-                            if (segment_tag_count > 0)
-                                && (segment_tag_na_count != segment_tag_count)
-                            {
+                            let segmented = (segment_tag_count > 0)
+                                && (segment_tag_na_count != segment_tag_count);
+                            let gene_split = (cov_field.tags.matches("GENE").count() > 0)
+                                || (cov_field.name.matches("GENE").count() > 0); // here looking for both the GENE name files in tags for grouped output and name for non-grouped --> should be improved t
+
+                            if segmented || gene_split {
                                 // Some segment is present, output all into multi-fasta
                                 // this may include multiple of the same segment currently!
-
-                                // if cov_field.tags.matches("GENE").count() > 0 {
-                                //     // GENE identifier present in grouped tags, output all into multi-fasta
-                                // }
-
+                                // GENE identifier present in grouped tags, output all into multi-fasta.
                                 let name = &tags[0].name;
-
                                 let sanitized_name = name.replace(" ", "_");
                                 let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
-
                                 let file_path = path.join(&sanitized_name).with_extension("fasta");
                                 let file_handle = File::create(file_path.as_path())
                                     .expect(&format!("Could not create file"));
-
                                 let mut writer = noodles::fasta::Writer::new(file_handle);
-
                                 for tag in &tags {
                                     let seq = &ref_seqs[&tag.name];
                                     writer.write_record(seq)?
                                 }
                             } else {
-                                // Filter fields by hiughest reads
+                                // Filter fields by highest number of mapped reads
                                 let max = match group_select_by {
                                     Some(_) => tags.iter().max_by_key(|x| x.reads),
                                     None => Some(&tags[0]),
@@ -650,19 +645,14 @@ impl ReadAlignment {
                                 match max {
                                     Some(field) => {
                                         // Filter fields by best
-
                                         let seq = &ref_seqs[&field.name];
-
                                         let sanitized_name = field.name.replace(" ", "_");
                                         let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
-
                                         let file_path =
                                             path.join(&sanitized_name).with_extension("fasta");
                                         let file_handle = File::create(file_path.as_path())
                                             .expect(&format!("Could not create file"));
-
                                         let mut writer = noodles::fasta::Writer::new(file_handle);
-
                                         writer.write_record(seq)?
                                     }
                                     _ => {}

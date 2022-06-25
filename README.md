@@ -30,7 +30,7 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 
 `Vircov` is written in Rust and works with alignments in the standard `PAF` or `SAM/BAM/CRAM` (next release) formats. It is extremely fast and can process alignments against thousands of viral reference genomes in seconds. Basic input filters can be selected to remove spurious alignments and text-style coverage plots can be printed to the terminal for visual confirmation.
 
-`Vircov` is written for implementation in (accredited) metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
+`Vircov` is written for implementation in metagenomics pipelines for human patients enroled in the `META-GP` network (Australia). As such, it attempts to be production-grade code with high test coverage, continuous integration, and versioned releases with precompiled binaries for Linux and MacOS.
 
 
 ## Installation
@@ -38,12 +38,6 @@ Viral metagenomic diagnostics from low-abundance clinical samples can be challen
 ```bash
 git clone https://github.com/esteinig/vircov 
 cd vircov && cargo build --release
-```
-
-## Usage
-
-```
-vircov tests/cases/test_full_ok.paf --fasta tests/cases/test_ok.fasta --table
 ```
 
 ## Tests
@@ -55,20 +49,25 @@ cd vircov && cargo test && cargo tarpaulin
 
 ## Concept
 
-Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. When only few reads map to the reference, and genome coverage is low, positive infections often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference.
-
-[De Vries et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1386653221000792) summarize this concept succinctly in this figure (adapted):
+Definitive viral diagnosis from metagenomic clinical samples can be extremely challenging due to low sequencing depth, large amounts of host reads and low infectious titres, especially in blood or CSF. One way to distinguish a positive viral diagnosis is to look at alignment coverage against one or multiple reference sequences. When only few reads map to the reference, and genome coverage is low, positive infections often display multiple distinct alignment regions, as opposed to reads mapping to a single or few regions on the reference. This has been implemented for example in `SURPI+` used by Miller et al. (2019) for DNA and RNA viruses in CSF samples. [De Vries et al. (2021)](https://www.sciencedirect.com/science/article/pii/S1386653221000792) summarize this concept succinctly in this figure (adapted):
 
 ![devries](https://user-images.githubusercontent.com/12873366/158775480-447d847e-5b0d-487c-a39a-81bdf428e09d.png)
 
 Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold on the number of regions is chosen by the authors (> 3). However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
 
-`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call. 
+`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call based on coverage information. We have specifically implemented grouping options by for example `taxid` in the reference fasta headers and account for segmented viruses and those split into genes in some databases like `Virosaurus`. In addition the most recent version implements single reference selection based on first grouping the reference sequences that have significant alignments by `taxid` or species name, and then selecting the reference equence with the highest number of unique mapped reads (for example). This allows for usign `Vircov` with permissive (no filter) settings to select single reference genoems for remappign and and provides sensitive coverage information. Finally with the most recent update, read identifier lists can be output as files either for all mapped unique reads in the provided alignments, or per genome (or grouped genomes if grouping is activated) passing the result filters.
+
+## Usage
+
+```
+
+```
 
 
 ## Clinical examples
 
 ```
+
 ```
 
 ## Performance

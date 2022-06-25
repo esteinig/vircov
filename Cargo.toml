@@ -1,9 +1,9 @@
 [package]
 rust-version = "1.58"
-name = "metacov"
+name = "vircov"
 version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
-description = "Metacov: genome coverage tools for metagenomic diagnostics"
+description = "Vircov: genome coverage tools for metagenomic diagnostics of viral pathogens"
 documentation = "https://github.com/esteinig/metacov"
 homepage = "https://github.com/esteinig/metacov"
 repository = "https://github.com/esteinig/metacov"
@@ -36,5 +36,5 @@ float_eq = "0.6.1"
 predicates = "1"
 
 [[bin]]
-name = "metacov"
+name = "vircov"
 path = "src/main.rs"
