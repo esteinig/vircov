@@ -960,7 +960,6 @@ mod tests {
         paf_test_intervals_l_segment: Vec<Interval<usize, String>>,
         // PAF test alignment intervals for S segment sequence
         paf_test_intervals_s_segment: Vec<Interval<usize, String>>,
-
         // Valid SAM file
         sam_test_file_ok: PathBuf,
         // Valid BAM file

@@ -138,6 +138,17 @@ pub struct Cli {
     /// primary output to determine a positive hit.
     #[structopt(short = "r", long = "regions", default_value = "0")]
     pub regions: u64,
+    /// Conditional coverage threshold for regions or grouped-regions to apply
+    ///
+    /// Applies the regions or group-regions filter only if the sequence alignment
+    /// has <= regions-coverage threshold reference coverage. Setting this value to
+    /// e.g. 0.6  only applies the regions filter to alignments with at most 60%  
+    /// coverage against the reference sequence, thus allowing for high coverage hits
+    /// with fewer distinct alignment regions to pass the basic filter. For example,
+    /// a reference sequence with 100% coverage and 1 distinct alignment regions would
+    /// not be filtered from the report output.
+    #[structopt(short = "r", long = "regions-cov")]
+    pub regions_cov: Option<f64>,
     /// Minimum read threshold (unique reads in alignment)
     ///
     /// Filters results by a minimum reads in alignment; if results
