@@ -1,5 +1,5 @@
 [package]
-rust-version = "1.58"
+rust-version = "1.63"
 name = "vircov"
 version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
@@ -28,6 +28,7 @@ crossterm = "0.23.0"
 itertools = "0.10.3"
 rust-htslib = "0.38"
 rust-lapper = "1.0.0"
+ordered-float = "3.0.0"
 noodles = { version = "0.20.0", features = ["fasta"] }
 
 [dev-dependencies]

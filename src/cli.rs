@@ -175,17 +175,16 @@ pub struct Cli {
     pub group_coverage: f64,
     /// Output read identifiers of aligned reads to file
     ///
-    /// Creates a file (.txt) that contains the (unique) identifiers
+    /// Creates a file (.txt) that contains the identifiers
     /// of all reads that passed the alignment and coverage
-    /// filters (i.e. those involved in the table outputs)
+    /// filters (those involved in the outputs)
     #[structopt(short = "O", long = "read-ids")]
     pub read_ids: Option<PathBuf>,
     /// Output read identifiers per genome or grouped genomes to file
     ///
     /// Creates a directory with a file (.txt) for each genome or group
-    /// that contains the (unique) identifiers of all reads that passed
-    /// the alignment and coverage filters (i.e. those involved in the
-    /// table outputs)
+    /// that contains the identifiers of all reads that passed the
+    /// alignment and coverage filters (those involved in the outputs)
     #[structopt(short = "S", long = "read-ids-split")]
     pub read_ids_split: Option<PathBuf>,
     /// Output a single reference for a grouped coverage assessment
@@ -195,12 +194,12 @@ pub struct Cli {
     /// a selection criterion as outlined in --group-select-by  
     #[structopt(short = "R", long = "group-select-split")]
     pub group_select_split: Option<PathBuf>,
-    /// Select a representative genome from the groups by max reads [or cov - todo]
+    /// Select a representative genome from the groups by max reads or coverage
     #[structopt(
         short = "B", 
         long = "group-select-by",
-        value_name = "reads",
-        possible_values = &["reads"],
+        value_name = "coverage",
+        possible_values = &["reads", "coverage"],
         case_insensitive=true,
         hide_possible_values=true
     )]

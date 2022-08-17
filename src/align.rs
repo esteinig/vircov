@@ -14,6 +14,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::from_utf8;
+use ordered_float::OrderedFloat;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
 
@@ -60,6 +61,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure to infer or identify file format from explicit option
     #[error("failed to parse a valid input format")]
     InputFormatError(),
+    /// Indicates failure when no group select by is provided (should not occurr)
+    #[error("failed to group select by reads or coverage")]
+    GroupSelectBy(),
 }
 
 /*
@@ -637,9 +641,13 @@ impl ReadAlignment {
                                 }
                             } else {
                                 // Filter fields by highest number of mapped reads
-                                let max = match group_select_by {
-                                    Some(_) => tags.iter().max_by_key(|x| x.reads),
-                                    None => Some(&tags[0]),
+                                let max = match group_select_by.clone() {
+                                    Some(value) => match value.as_str() {
+                                        "reads" => tags.iter().max_by_key(|x| x.reads),
+                                        "coverage" => tags.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                                        _ => return Err(ReadAlignmentError::GroupSelectBy())
+                                    }, 
+                                    None => return Err(ReadAlignmentError::GroupSelectBy())
                                 };
 
                                 match max {
