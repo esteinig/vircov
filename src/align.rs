@@ -61,9 +61,15 @@ pub enum ReadAlignmentError {
     /// Indicates failure to infer or identify file format from explicit option
     #[error("failed to parse a valid input format")]
     InputFormatError(),
+    /// Indicates failure when no grouping options are provided and selection is specified
+    #[error("failed to use the group selection options becuase no grouping is specified")]
+    GroupSelectSplitError(),
     /// Indicates failure when no group select by is provided (should not occurr)
     #[error("failed to group select by reads or coverage")]
-    GroupSelectBy(),
+    GroupSelectByError(),
+    /// Indicates failure when no group select by is provided (should not occurr)
+    #[error("failed to provide a negative segment field")]
+    SegmentFieldNaNError(),
 }
 
 /*
@@ -524,6 +530,8 @@ impl ReadAlignment {
         read_ids_split: Option<PathBuf>,
         group_select_by: Option<String>,
         group_select_split: Option<PathBuf>,
+        segment_field: Option<String>,
+        segment_field_nan: Option<String>
     ) -> Result<(), ReadAlignmentError> {
         match table {
             true => {
@@ -569,7 +577,7 @@ impl ReadAlignment {
                 for read_id in all_unique_read_ids {
                     write!(file_handle, "{}\n", &read_id)?;
                 }
-            }
+            },
             None => {}
         }
 
@@ -588,12 +596,13 @@ impl ReadAlignment {
                             .expect(&format!("Could not write read id {}", &read_id));
                     }
                 }
-            }
+            },
             None => {}
         }
 
         match group_select_split {
             Some(path) => {
+
                 match &self.target_sequences {
                     Some(ref_seqs) => {
                         std::fs::create_dir_all(&path)?;
@@ -610,17 +619,25 @@ impl ReadAlignment {
                                 })
                                 .collect::<Vec<CoverageFields>>();
 
-                            // Virosaurus config
+                            
+                            // In grouped 
 
-                            // If segmented (multiple "segment="" in description of coverage field that are not "segment=N/A")
-                            // combine all into multi-fasta, otherwise select best by read.
-                            let segment_tag_count =
-                                cov_field.description.matches("segment=").count();
-                            let segment_tag_na_count =
-                                cov_field.description.matches("segment=N/A").count();
+                            let segmented = match segment_field.clone() {
+                                Some(seg_field) => {
+                                    match segment_field_nan.clone() {
+                                        Some(seg_field_nan) => {
+                                            let segment_tag_count = cov_field.description.matches(&seg_field).count();
+                                            let segment_tag_na_count = cov_field.description.matches(&seg_field_nan).count();
+                                            (segment_tag_count > 0) && (segment_tag_na_count != segment_tag_count)
+                                        },
+                                        None => return Err(ReadAlignmentError::SegmentFieldNaNError())
+                                    } 
+                                    
+                                },
+                                None => false
+                            };
 
-                            let segmented = (segment_tag_count > 0)
-                                && (segment_tag_na_count != segment_tag_count);
+                        
                             let gene_split = (cov_field.tags.matches("GENE").count() > 0)
                                 || (cov_field.name.matches("GENE").count() > 0); // here looking for both the GENE name files in tags for grouped output and name for non-grouped --> should be improved t
 
@@ -645,9 +662,9 @@ impl ReadAlignment {
                                     Some(value) => match value.as_str() {
                                         "reads" => tags.iter().max_by_key(|x| x.reads),
                                         "coverage" => tags.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                                        _ => return Err(ReadAlignmentError::GroupSelectBy())
+                                        _ => return Err(ReadAlignmentError::GroupSelectByError())
                                     }, 
-                                    None => return Err(ReadAlignmentError::GroupSelectBy())
+                                    None => return Err(ReadAlignmentError::GroupSelectByError())
                                 };
 
                                 match max {
@@ -670,8 +687,9 @@ impl ReadAlignment {
                     }
                     _ => return Err(ReadAlignmentError::GroupSequenceError()),
                 }
+            },
+            None => {
             }
-            None => {}
         }
 
         Ok(())

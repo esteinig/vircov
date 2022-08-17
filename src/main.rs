@@ -48,6 +48,8 @@ fn main() -> Result<(), ReadAlignmentError> {
                 args.read_ids_split,
                 None,
                 None,
+                args.segment_field,
+                args.segment_field_nan,
             )?;
         }
         Some(group_field) => {
@@ -72,6 +74,8 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 args.read_ids_split,
                                 args.group_select_by,
                                 args.group_select_split,
+                                args.segment_field,
+                                args.segment_field_nan
                             )?;
                         }
                     };
