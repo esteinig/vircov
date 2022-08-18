@@ -17,6 +17,8 @@ use std::str::from_utf8;
 use ordered_float::OrderedFloat;
 use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
 use thiserror::Error;
+use crate::utils::get_sanitized_fasta_writer;
+use crate::utils::{get_grouped_segments, get_segment_selections};
 
 /*
 ========================
@@ -70,6 +72,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure when no group select by is provided (should not occurr)
     #[error("failed to provide a negative segment field")]
     SegmentFieldNaNError(),
+    /// Indicates failure when no best value from the grouped coverage fields could be selected
+    #[error("failed to select a best reference sequence")]
+    GroupSelectReference(),
 }
 
 /*
@@ -86,23 +91,23 @@ fn display_coverage(cov: &f64) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoverageFields {
     /// Name of the target sequence
-    name: String,
+    pub name: String,
     /// Number of non-overlapping alignment regions
-    regions: u64,
+    pub regions: u64,
     /// Number of unique reads aligned
-    reads: u64,
+    pub reads: u64,
     /// Number of alignments
-    alignments: u64,
+    pub alignments: u64,
     /// Number of bases covered by alignments
-    bases: u64,
+    pub bases: u64,
     /// Length of the target sequence
-    length: u64,
+    pub length: u64,
     /// Fractional coverage of the alignments
-    coverage: f64,
+    pub coverage: f64,
     /// Descriptions of the reference sequence headers
-    description: String,
+    pub description: String,
     /// Tags for alignment regions in start:stop:aln format
-    tags: String,
+    pub tags: String,
     /// Unique read identifiers for grouped operations
     pub unique_reads: Vec<String>,
 }
@@ -110,14 +115,15 @@ pub struct CoverageFields {
 impl CoverageFields {
     fn as_tag(&self) -> String {
         format!(
-            "{:}|{:}|{:}|{:}|{:}|{:}|{:}",
+            "{:}|{:}|{:}|{:}|{:}|{:}|{:}|{:}",
             self.name,
             self.regions,
             self.reads,
             self.alignments,
             self.bases,
             self.length,
-            self.coverage
+            self.coverage,
+            self.description
         )
     }
     fn from_tag(tag: &str) -> Result<Self, ReadAlignmentError> {
@@ -131,9 +137,10 @@ impl CoverageFields {
             bases: fields[4].parse::<u64>()?,
             length: fields[5].parse::<u64>()?,
             coverage: fields[6].parse::<f64>()?,
-            description: "".to_string(),
+            description: fields[7].to_string(),
             tags: "".to_string(),
             unique_reads: Vec::new(),
+            
         })
     }
 }
@@ -526,6 +533,7 @@ impl ReadAlignment {
         &self,
         coverage_fields: &[CoverageFields],
         table: bool,
+        group_sep: String,
         read_ids: Option<PathBuf>,
         read_ids_split: Option<PathBuf>,
         group_select_by: Option<String>,
@@ -533,6 +541,7 @@ impl ReadAlignment {
         segment_field: Option<String>,
         segment_field_nan: Option<String>
     ) -> Result<(), ReadAlignmentError> {
+
         match table {
             true => {
                 let table_fields = coverage_fields
@@ -609,9 +618,11 @@ impl ReadAlignment {
 
                         for cov_field in coverage_fields {
                             // In the grouped data the fields are itself contained in the tag
+                            // the following will produce a CoverageField for reach tag using
+                            // the `from_tag` parsing method
                             let tags = cov_field
                                 .tags
-                                .split(" ")
+                                .split("~~~")
                                 .into_iter()
                                 .filter_map(|x| match x {
                                     "" => None,
@@ -620,8 +631,9 @@ impl ReadAlignment {
                                 .collect::<Vec<CoverageFields>>();
 
                             
-                            // In grouped 
-
+                            // In grouped coverage field structs, the description contains a
+                            // concatenated description of the grouped reference sequences;
+                            // may need to modify later and add it to the group tags (tricky be)
                             let segmented = match segment_field.clone() {
                                 Some(seg_field) => {
                                     match segment_field_nan.clone() {
@@ -639,57 +651,74 @@ impl ReadAlignment {
 
                         
                             let gene_split = (cov_field.tags.matches("GENE").count() > 0)
-                                || (cov_field.name.matches("GENE").count() > 0); // here looking for both the GENE name files in tags for grouped output and name for non-grouped --> should be improved t
+                                || (cov_field.name.matches("GENE").count() > 0); 
+                            
 
-                            if segmented || gene_split {
-                                // Some segment is present, output all into multi-fasta
-                                // this may include multiple of the same segment currently!
-                                // GENE identifier present in grouped tags, output all into multi-fasta.
+                            // Output all grouped reference sequences if segments are present (fix) or if the
+                            // GENE identifier is present (e.g. Virosaurus) - this will put all sequences into
+                            // a multi-FASTA 
+                            if gene_split {
                                 let name = &tags[0].name;
-                                let sanitized_name = name.replace(" ", "_");
-                                let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
-                                let file_path = path.join(&sanitized_name).with_extension("fasta");
-                                let file_handle = File::create(file_path.as_path())
-                                    .expect(&format!("Could not create file"));
-                                let mut writer = noodles::fasta::Writer::new(file_handle);
+                                let mut writer = get_sanitized_fasta_writer(name, &path)
+                                    .expect("Could not get sanitized FASTA writer for GENE multi-FASTA");
                                 for tag in &tags {
                                     let seq = &ref_seqs[&tag.name];
                                     writer.write_record(seq)?
                                 }
                             } else {
-                                // Filter fields by highest number of mapped reads
-                                let max = match group_select_by.clone() {
-                                    Some(value) => match value.as_str() {
-                                        "reads" => tags.iter().max_by_key(|x| x.reads),
-                                        "coverage" => tags.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                                        _ => return Err(ReadAlignmentError::GroupSelectByError())
-                                    }, 
-                                    None => return Err(ReadAlignmentError::GroupSelectByError())
-                                };
+                                // Filter reference sequences (contained in tags) by highest number 
+                                // of mapped reads or coverage
+                                if segmented {
+                                    // If the grouped sequences are segmented, group unique segments (from identifier) 
+                                    // and select the best segment of each group based on the group_select_by metric
 
-                                match max {
-                                    Some(field) => {
-                                        // Filter fields by best
-                                        let seq = &ref_seqs[&field.name];
-                                        let sanitized_name = field.name.replace(" ", "_");
-                                        let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
-                                        let file_path =
-                                            path.join(&sanitized_name).with_extension("fasta");
-                                        let file_handle = File::create(file_path.as_path())
-                                            .expect(&format!("Could not create file"));
-                                        let mut writer = noodles::fasta::Writer::new(file_handle);
+                                    let grouped_segments = get_grouped_segments(
+                                        tags, segment_field.clone(), group_sep.clone()
+                                    )?;
+
+                                    let grouped_segment_selections = get_segment_selections(
+                                        grouped_segments, group_select_by.clone()
+                                    )?;
+
+                                    for (segment_seq_name, segment_field) in grouped_segment_selections {
+                                        let seq = &ref_seqs[&segment_field.name];
+                                        let mut writer = get_sanitized_fasta_writer(&segment_seq_name, &path)
+                                                .expect("Could not get sanitized FASTA writer for segment FASTA");
                                         writer.write_record(seq)?
                                     }
-                                    _ => {}
+ 
+                                } else {
+                                    // If not segmented, simply select the best reference sequence using the
+                                    // group_select_by metric and select the sequence from the header fields 
+                                    // to write to FASTA
+                                    let max = match group_select_by.clone() {
+                                        Some(value) => match value.as_str() {
+                                            "reads" => tags.iter().max_by_key(|x| x.reads),
+                                            "coverage" => tags.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                                            _ => return Err(ReadAlignmentError::GroupSelectByError())
+                                        }, 
+                                        None => return Err(ReadAlignmentError::GroupSelectByError())
+                                    };
+    
+                                    match max {
+                                        Some(field) => {
+                                            // Filter fields by best
+                                            let seq = &ref_seqs[&field.name];
+                                            let mut writer = get_sanitized_fasta_writer(&field.name, &path)
+                                                    .expect("Could not get sanitized FASTA writer for single FASTA");
+                                            writer.write_record(seq)?
+                                        }
+                                        _ => return Err(ReadAlignmentError::GroupSelectReference())
+                                    }
                                 }
+
                             }
                         }
                     }
                     _ => return Err(ReadAlignmentError::GroupSequenceError()),
                 }
             },
-            None => {
-            }
+            None => {}
         }
 
         Ok(())
@@ -787,14 +816,19 @@ impl ReadAlignment {
                         }
                     }
                     _ => {
+                        // Separate tags by a weird delimiter (~~~) to include
+                        // white space separated header descriptions in the tags
                         grouped_fields.tags.push_str(&field.as_tag());
-                        grouped_fields.tags.push_str(" ");
+                        grouped_fields.tags.push_str("~~~");
                     }
                 }
                 for read in &field.unique_reads {
                     ureads.push(read.to_string())
                 }
             }
+
+            // Trim the last grouped tag separator introduced by the field loop above (~~~)
+            grouped_fields.tags = grouped_fields.tags.trim_end_matches("~~~").to_string();
 
             grouped_fields.bases = grouped_fields.bases / fields.len() as u64;
             grouped_fields.coverage = grouped_fields.coverage / fields.len() as f64;
@@ -825,7 +859,7 @@ Alignment records
 /// Return the query alignment length from a CIGAR string
 /// as the sum of all matches (M) and insertions (I).
 ///
-/// PAF considers insertaions but not deletions when computing
+/// PAF considers insertions but not deletions when computing
 /// query start and end positions from which the query alignment
 /// length is then calculated in PafRecord (qend - qstart).
 fn qalen_from_cigar<'a>(cigar: impl Iterator<Item = &'a Cigar>) -> u32 {

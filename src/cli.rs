@@ -58,22 +58,23 @@ pub struct Cli {
     ///
     /// Single flag (-v) adds whitespace separated tags in the last column,
     /// corresponding to the number of inferred alignment coverage regions.
-    /// Tag fields are separated by semicolons.
+    /// Tag fields are separated by vertical bars (|).
     ///
     /// When no grouping argument is given then each tag consists of
-    ///     : start of coverage region
-    ///     : end of coverage region
-    ///     : number of alignments in the region
+    ///     | start of coverage region
+    ///     | end of coverage region
+    ///     | number of alignments in the region
     ///
     /// When the output is grouped, then each tag consists of data from each
     /// output that has been grouped
-    ///     : name of reference sequence
-    ///     : number of regions
-    ///     : number of reads in region
-    ///     : number of alignments in region
-    ///     : number of base pairs in region
-    ///     : length of reference sequence
-    ///     : coverage on reference sequence
+    ///     | name of reference sequence
+    ///     | number of regions
+    ///     | number of reads in region
+    ///     | number of alignments in region
+    ///     | number of base pairs in region
+    ///     | length of reference sequence
+    ///     | coverage on reference sequence
+    ///     | reference sequence description header
     #[structopt(short, long, parse(from_occurrences = parse_verbosity))]
     pub verbose: u64,
     /// Group outputs by a field in the reference sequence description

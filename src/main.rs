@@ -6,6 +6,7 @@ use structopt::StructOpt;
 mod align;
 mod cli;
 mod covplot;
+mod utils;
 
 /// Vircov application
 ///
@@ -41,9 +42,16 @@ fn main() -> Result<(), ReadAlignmentError> {
 
     match args.group_by {
         None => {
+
+            match args.group_select_split {
+                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError()),
+                None => {}
+            };
+
             align.to_output(
                 &data,
                 args.table,
+                args.group_sep,
                 args.read_ids,
                 args.read_ids_split,
                 None,
@@ -65,11 +73,12 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 args.group_regions,
                                 args.group_coverage,
                                 group_field,
-                                args.group_sep,
+                                args.group_sep.clone(),
                             )?;
                             align.to_output(
                                 &grouped_data,
                                 args.table,
+                                args.group_sep.clone(),
                                 args.read_ids,
                                 args.read_ids_split,
                                 args.group_select_by,
