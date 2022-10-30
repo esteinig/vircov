@@ -205,25 +205,27 @@ pub struct Cli {
         hide_possible_values=true
     )]
     pub group_select_by: Option<String>,
+    /// Output selected sequences with a numeric prefix sorted by descending coverage
+    #[structopt(short = "G", long = "group-select-order")]
+    pub group_select_order: Option<bool>,
     /// Segment field identifier (e.g. "segment=")
-    /// 
+    ///
     /// Use this value to identify segment fields in the referennce headers of grouped
     /// alignments to identify whether a group contains segmented genomes. If so
     /// the --group-select-split option is made "segment-aware". This means that
     /// the a representative segment is selected from all segments with the same
     /// identifier value (e.g. segment=L) using the metric in --group-select-by
     /// and all representative segments are output into a multi-fasta files into
-    /// the directory specified by --group-select-split 
+    /// the directory specified by --group-select-split
     #[structopt(long)]
     pub segment_field: Option<String>,
     /// Segment field identifier negative (e.g. "segment=N/A")
-    /// 
+    ///
     /// This value identifies reference sequences that are not segmented. When --group-select-by
     /// is activated and --segment-field is specified, selection of segments DOES NOT occur for
     /// grroups in which all alignments are negative.
     #[structopt(long)]
     pub segment_field_nan: Option<String>,
-
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {

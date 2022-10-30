@@ -31,7 +31,7 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.alignment_format,
     )?;
 
-    let data = align.coverage_statistics(
+    let mut data = align.coverage_statistics(
         args.regions,
         args.seq_len,
         args.coverage,
@@ -42,18 +42,18 @@ fn main() -> Result<(), ReadAlignmentError> {
 
     match args.group_by {
         None => {
-
             match args.group_select_split {
                 Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError()),
                 None => {}
             };
 
             align.to_output(
-                &data,
+                &mut data,
                 args.table,
                 args.group_sep,
                 args.read_ids,
                 args.read_ids_split,
+                None,
                 None,
                 None,
                 args.segment_field,
@@ -68,7 +68,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                         true => return Err(ReadAlignmentError::GroupCovPlotError()),
                         false => {
                             // If reference sequences have been provided, continue with grouping outputs
-                            let grouped_data = align.group_output(
+                            let mut grouped_data = align.group_output(
                                 &data,
                                 args.group_regions,
                                 args.group_coverage,
@@ -76,15 +76,16 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 args.group_sep.clone(),
                             )?;
                             align.to_output(
-                                &grouped_data,
+                                &mut grouped_data,
                                 args.table,
                                 args.group_sep.clone(),
                                 args.read_ids,
                                 args.read_ids_split,
                                 args.group_select_by,
                                 args.group_select_split,
+                                args.group_select_order,
                                 args.segment_field,
-                                args.segment_field_nan
+                                args.segment_field_nan,
                             )?;
                         }
                     };
