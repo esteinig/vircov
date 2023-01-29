@@ -195,17 +195,17 @@ pub struct Cli {
     /// a selection criterion as outlined in --group-select-by  
     #[structopt(short = "R", long = "group-select-split")]
     pub group_select_split: Option<PathBuf>,
-    /// Select a representative genome from the groups by max reads or coverage
+    /// Select a representative genome from the groups by reads or coverage
     #[structopt(
         short = "B", 
         long = "group-select-by",
         value_name = "coverage",
         possible_values = &["reads", "coverage"],
         case_insensitive=true,
-        hide_possible_values=true
+        hide_possible_values=false
     )]
     pub group_select_by: Option<String>,
-    /// Output selected sequences with a numeric prefix sorted by descending coverage
+    /// Output selected sequences with a numeric prefix sorted by descending reads or coverage (--group-select-by)
     #[structopt(short = "G", long = "group-select-order")]
     pub group_select_order: Option<bool>,
     /// Segment field identifier (e.g. "segment=")

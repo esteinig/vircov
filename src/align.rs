@@ -618,11 +618,22 @@ impl ReadAlignment {
 
                         // Flipped comparison function, highest to lowest sort
                         let coverage_fields = match group_select_order {
-                            Some(true) => {
-                                coverage_fields
-                                    .sort_by(|a, b| b.coverage.partial_cmp(&a.coverage).unwrap());
-                                coverage_fields
-                            }
+                            Some(true) => match group_select_by.clone() {
+                                Some(value) => match value.as_str() {
+                                    "reads" => {
+                                        coverage_fields.sort_by(|a, b| b.reads.cmp(&a.reads));
+                                        coverage_fields
+                                    }
+                                    "coverage" => {
+                                        coverage_fields.sort_by(|a, b| {
+                                            b.coverage.partial_cmp(&a.coverage).unwrap()
+                                        });
+                                        coverage_fields
+                                    }
+                                    _ => return Err(ReadAlignmentError::GroupSelectByError()),
+                                },
+                                None => coverage_fields,
+                            },
                             Some(_) => coverage_fields,
                             None => coverage_fields,
                         };
@@ -726,7 +737,10 @@ impl ReadAlignment {
 
                                             let seq_name = match group_select_order {
                                                 Some(true) => {
-                                                    format!("{:}-{:}", cov_field_idx, &field.name)
+                                                    format!(
+                                                        "{:0>2}-{:}",
+                                                        cov_field_idx, &field.name
+                                                    )
                                                 }
                                                 Some(_) => format!("{:}", &field.name),
                                                 None => format!("{:}", &field.name),
