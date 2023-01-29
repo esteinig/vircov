@@ -231,9 +231,11 @@ fn parse_exclude(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, ReadAl
             let reader = File::open(_file).map(BufReader::new)?;
 
             let mut exclude_vec: Vec<String> = Vec::new();
-
             for line in reader.lines() {
-                exclude_vec.push(line?)
+                let content: String = line?;
+                if !content.starts_with("#") || !content.trim().is_empty() {
+                    exclude_vec.push(content.trim().to_string())
+                }
             }
 
             Ok(Some(exclude_vec))
