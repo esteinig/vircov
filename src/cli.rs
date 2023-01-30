@@ -106,6 +106,7 @@ pub struct Cli {
     /// This option can be used as a blacklist to filter out
     /// alignments of unwanted viruses, e.g. using taxonomy
     /// identifiers or species names in target sequence headers.
+    /// Lines starting with "#" and empty lines are not considered.
     #[structopt(short, long, parse(try_from_os_str = check_file_exists))]
     pub exclude: Option<PathBuf>,
     /// Prints pretty output table  
