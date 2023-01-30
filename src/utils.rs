@@ -11,7 +11,6 @@ pub fn get_sanitized_fasta_writer(
     path: &std::path::PathBuf,
 ) -> Result<noodles::fasta::Writer<File>, Error> {
     let sanitized_name = name.replace(" ", "_");
-    let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus specific: sanitize remaining header separator on sequence identifier (weird format)
     let file_path = path.join(&sanitized_name).with_extension("fasta");
     let file_handle =
         std::fs::File::create(file_path.as_path()).expect(&format!("Could not create fasta file"));

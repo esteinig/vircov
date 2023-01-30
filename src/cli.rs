@@ -149,8 +149,8 @@ pub struct Cli {
     /// with fewer distinct alignment regions to pass the basic filter. For example,
     /// a reference sequence with 100% coverage and 1 distinct alignment regions would
     /// not be filtered from the report output.
-    #[structopt(short = "r", long = "regions-cov")]
-    pub regions_cov: Option<f64>,
+    #[structopt(short = "r", long = "regions-coverage")]
+    pub regions_coverage: Option<f64>,
     /// Minimum read threshold (unique reads in alignment)
     ///
     /// Filters results by a minimum reads in alignment; if results
@@ -208,7 +208,7 @@ pub struct Cli {
     pub group_select_by: Option<String>,
     /// Output selected sequences with a numeric prefix sorted by descending reads or coverage (--group-select-by)
     #[structopt(short = "G", long = "group-select-order")]
-    pub group_select_order: Option<bool>,
+    pub group_select_order: bool,
     /// Segment field identifier (e.g. "segment=")
     ///
     /// Use this value to identify segment fields in the referennce headers of grouped

@@ -35,6 +35,7 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.regions,
         args.seq_len,
         args.coverage,
+        args.regions_coverage,
         args.reads,
         &args.group_by,
         verbose,
@@ -55,7 +56,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                 args.read_ids_split,
                 None,
                 None,
-                None,
+                false,
                 args.segment_field,
                 args.segment_field_nan,
             )?;
