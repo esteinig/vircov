@@ -79,7 +79,7 @@ pub fn get_segment_selections(
             Some(selected_cov_field) => {
                 let sanitized_name = selected_cov_field.name.replace(" ", "_");
                 let sanitized_name = sanitized_name.trim_matches(';');
-                let segment_sanitized = segment.trim_matches(' ').to_string(); // trim whitespaces fro msegment field
+                let segment_sanitized = segment.trim_matches(' ').to_string(); // trim whitespaces from segment field
                 let seg_name = format!("{}_{}", sanitized_name, segment_sanitized);
                 selected_segments
                     .entry(seg_name)

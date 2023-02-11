@@ -240,7 +240,7 @@ fn parse_exclude(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, ReadAl
 
                 if content.starts_with("#") || content.is_empty() {
                 } else {
-                    exclude_vec.push(content.to_string())
+                    exclude_vec.push(content.to_lowercase())
                 }
             }
 
@@ -494,7 +494,7 @@ impl ReadAlignment {
                 (_, None) => "-".to_string(),
             };
 
-            let target_description_decap = target_description.to_lowercase();
+            let target_description_decap = target_description.to_lowercase(); // exclude terms are parsed as lowercase (case-insensitive matching)
 
             let exclude_target_sequence = match &self.target_exclude {
                 None => false,
@@ -712,7 +712,6 @@ impl ReadAlignment {
                             // } else {
 
                             // This is the output name using the grouping variable (e.g. taxonomic identifier)
-                            //
                             let cov_field_name = match cov_field.name.split_whitespace().next() {
                                 Some(str) => str,
                                 None => return Err(ReadAlignmentError::GroupSelectReferenceName()),
@@ -1101,7 +1100,6 @@ mod tests {
         bam_test_fasta_ok: PathBuf,
         // Valid FASTA but without sequence edge case
         bam_test_fasta_zero_ok: PathBuf,
-
         // General failure to parse input file name
         input_file_name_fail: PathBuf,
     }
