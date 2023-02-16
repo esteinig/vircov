@@ -514,8 +514,10 @@ impl ReadAlignment {
             let region_filter_passed: bool = match regions_coverage {
                 Some(reg_cov_threshold) => {
                     // Apply the region filter only if the reference sequence
-                    // coverage is below a coverage threshold
-                    if target_cov < reg_cov_threshold {
+                    // coverage is below a coverage threshold - only apply this if
+                    // the threshold is bigger than zero so that pipelines can still
+                    // apply the option with a 0 value
+                    if (reg_cov_threshold > 0.) && (target_cov < reg_cov_threshold) {
                         target_cov_n >= regions
                     } else {
                         // otherwise, if coverage is above the threshold, do
