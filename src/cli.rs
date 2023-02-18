@@ -192,6 +192,12 @@ pub struct Cli {
     /// across reference sequences if results are grouped
     #[structopt(long, default_value = "0")]
     pub group_aligned: u64,
+    /// Minimum grouped coverage reads
+    ///
+    /// Filters results by a minimum number of unique reads
+    /// across reference sequences if results are grouped
+    #[structopt(long, default_value = "0")]
+    pub group_reads: u64,
     /// Output read identifiers of all alignments to file
     ///
     /// Creates a file (.txt) that contains the identifiers

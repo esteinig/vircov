@@ -75,6 +75,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 args.group_regions,
                                 args.group_coverage,
                                 args.group_aligned,
+                                args.group_reads,
                                 group_field,
                                 args.group_sep.clone(),
                             )?;
