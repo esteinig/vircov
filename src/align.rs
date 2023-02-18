@@ -822,12 +822,14 @@ impl ReadAlignment {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_output(
         &self,
         coverage_fields: &[CoverageFields],
         grouped_regions: u64,
         grouped_coverage: f64,
         grouped_alignments: u64,
+        grouped_reads: u64,
         group_by: String,
         group_sep: String,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
@@ -915,6 +917,7 @@ impl ReadAlignment {
             if grouped_fields.regions >= grouped_regions
                 && grouped_fields.coverage >= grouped_coverage
                 && grouped_fields.alignments >= grouped_alignments
+                && grouped_fields.reads >= grouped_reads
             {
                 grouped_coverage_fields.push(grouped_fields);
             }
