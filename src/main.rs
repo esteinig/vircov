@@ -37,15 +37,15 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.coverage,
         args.regions_coverage,
         args.reads,
+        args.aligned,
         &args.group_by,
         verbose,
     )?;
 
     match args.group_by {
         None => {
-            match args.group_select_split {
-                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError),
-                None => {}
+            if let Some(_) = args.group_select_split {
+                return Err(ReadAlignmentError::GroupSelectSplitError);
             };
 
             align.to_output(
@@ -73,6 +73,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 &data,
                                 args.group_regions,
                                 args.group_coverage,
+                                args.group_aligned,
                                 group_field,
                                 args.group_sep.clone(),
                             )?;

@@ -11,7 +11,7 @@ pub fn get_sanitized_fasta_writer(
     path: &std::path::Path,
 ) -> Result<noodles::fasta::Writer<File>, ReadAlignmentError> {
     let sanitized_name = name.replace(' ', "_");
-    let file_path = path.join(&sanitized_name).with_extension("fasta");
+    let file_path = path.join(sanitized_name).with_extension("fasta");
     let file_handle = std::fs::File::create(file_path.as_path())?;
 
     Ok(noodles::fasta::Writer::new(file_handle))
