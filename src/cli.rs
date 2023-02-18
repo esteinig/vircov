@@ -114,7 +114,7 @@ pub struct Cli {
     /// Output the coverage statistics as a pretty table; may still get
     /// mangled on short terminals, as terminal width cannot currently
     /// be estimated in underlying library.
-    #[structopt(short = "t", long = "table")]
+    #[structopt(short = "T", long = "table")]
     pub table: bool,
     /// Prints coverage plots
     ///
@@ -149,7 +149,7 @@ pub struct Cli {
     /// with fewer distinct alignment regions to pass the basic filter. For example,
     /// a reference sequence with 100% coverage and 1 distinct alignment regions would
     /// not be filtered from the report output.
-    #[structopt(short = "r", long = "regions-coverage")]
+    #[structopt(short = "t", long = "regions-coverage")]
     pub regions_coverage: Option<f64>,
     /// Minimum read threshold (unique reads in alignment)
     ///
