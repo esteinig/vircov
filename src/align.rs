@@ -822,6 +822,7 @@ impl ReadAlignment {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn group_output(
         &self,
         coverage_fields: &[CoverageFields],
