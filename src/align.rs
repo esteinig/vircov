@@ -78,6 +78,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure when no reference name could be selected from the grouped identifier
     #[error("failed to extract a reference name from the grouped identifier")]
     GroupSelectReferenceName,
+    /// Indicates failure when no coverage value could be extracted from a group of coverage fields
+    #[error("failed to extract the highest coverage value from the grouped fields")]
+    GroupSelectCoverage,
 }
 
 /*
@@ -156,7 +159,7 @@ pub struct CoverageTableFields {
     #[header("Regions")]
     /// Number of non-overlapping alignment regions
     regions: u64,
-    #[header("Aligned Reads")]
+    #[header("Reads")]
     /// Number of unique reads aligned
     reads: u64,
     #[header("Alignments")]
@@ -433,6 +436,7 @@ impl ReadAlignment {
         coverage: f64,
         regions_coverage: Option<f64>,
         reads: u64,
+        aligned: u64,
         group_by: &Option<String>,
         verbosity: u64,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
@@ -528,7 +532,10 @@ impl ReadAlignment {
                 _ => target_cov_n >= regions,
             };
 
+            let reads_aligned = targets.len() as u64;
+
             if target_len >= seq_len
+                && reads_aligned >= aligned
                 && region_filter_passed
                 && target_cov >= coverage
                 && unique_reads_n >= reads
@@ -538,7 +545,7 @@ impl ReadAlignment {
                     name: target_name.to_owned(),
                     regions: target_cov_n,
                     reads: unique_reads_n,
-                    alignments: targets.len() as u64,
+                    alignments: reads_aligned,
                     bases: target_cov_bp,
                     length: target_len,
                     coverage: target_cov,
@@ -558,6 +565,7 @@ impl ReadAlignment {
         &self,
         coverage_fields: &mut [CoverageFields],
         table: bool,
+        header: bool,
         group_sep: String,
         read_ids: Option<PathBuf>,
         read_ids_split: Option<PathBuf>,
@@ -579,6 +587,9 @@ impl ReadAlignment {
                 println!("{}", _table)
             }
             false => {
+                if header {
+                    println!("sequence\tregions\treads\talignments\tbases\tlength\tcoverage\tdescription\ttags")
+                }
                 for cov_fields in coverage_fields.iter_mut() {
                     println!(
                         "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",
@@ -598,199 +609,184 @@ impl ReadAlignment {
 
         // Non grouped data unique read outputs + grouped
 
-        match read_ids {
-            Some(path) => {
-                let mut file_handle = File::create(&path)?;
+        if let Some(path) = read_ids {
+            let mut file_handle = File::create(&path)?;
 
-                let all_unique_read_ids: Vec<String> = coverage_fields
-                    .iter()
-                    .flat_map(|field| field.unique_reads.to_owned()) // in case it is grouped
-                    .unique()
-                    .collect();
+            let all_unique_read_ids: Vec<String> = coverage_fields
+                .iter()
+                .flat_map(|field| field.unique_reads.to_owned()) // in case it is grouped
+                .unique()
+                .collect();
 
-                for read_id in all_unique_read_ids {
-                    writeln!(file_handle, "{}", &read_id)?;
-                }
+            for read_id in all_unique_read_ids {
+                writeln!(file_handle, "{}", &read_id)?;
             }
-            None => {}
         }
 
-        match read_ids_split {
-            Some(path) => {
-                std::fs::create_dir_all(&path)?;
-                for field in coverage_fields.iter_mut() {
-                    let sanitized_name = field.name.replace(' ', "_");
-                    let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
+        if let Some(path) = read_ids_split {
+            std::fs::create_dir_all(&path)?;
+            for field in coverage_fields.iter_mut() {
+                let sanitized_name = field.name.replace(' ', "_");
+                let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
 
-                    let file_path = path.join(&sanitized_name).with_extension("txt");
-                    let mut file_handle = File::create(file_path.as_path())?;
-                    for read_id in field.unique_reads.iter() {
-                        writeln!(file_handle, "{}", &read_id)?
-                    }
+                let file_path = path.join(sanitized_name).with_extension("txt");
+                let mut file_handle = File::create(file_path.as_path())?;
+                for read_id in field.unique_reads.iter() {
+                    writeln!(file_handle, "{}", &read_id)?
                 }
             }
-            None => {}
         }
 
-        match group_select_split {
-            Some(path) => {
-                match &self.target_sequences {
-                    Some(ref_seqs) => {
-                        std::fs::create_dir_all(&path)?;
+        if let Some(path) = group_select_split {
+            match &self.target_sequences {
+                Some(ref_seqs) => {
+                    std::fs::create_dir_all(&path)?;
 
-                        // Flipped comparison function, highest to lowest sort
-                        let coverage_fields = match group_select_order {
-                            true => match group_select_by.clone() {
+                    // Flipped comparison function, highest to lowest sort
+                    let coverage_fields = match group_select_order {
+                        true => match group_select_by.clone() {
+                            Some(value) => match value.as_str() {
+                                "reads" => {
+                                    coverage_fields.sort_by(|a, b| b.reads.cmp(&a.reads));
+                                    coverage_fields
+                                }
+                                "coverage" => {
+                                    coverage_fields.sort_by(|a, b| {
+                                        b.coverage.partial_cmp(&a.coverage).unwrap()
+                                    });
+                                    coverage_fields
+                                }
+                                _ => return Err(ReadAlignmentError::GroupSelectByError),
+                            },
+                            None => coverage_fields,
+                        },
+                        false => coverage_fields,
+                    };
+
+                    for (cov_field_idx, cov_field) in coverage_fields.iter().enumerate() {
+                        // In the grouped data the fields are itself contained in the tag
+                        // the following will produce a CoverageField for each tag using
+                        // the `from_tag` parsing method
+                        let tags = cov_field
+                            .tags
+                            .split("~~~")
+                            .into_iter()
+                            .filter_map(|x| match x {
+                                "" => None,
+                                _ => Some(CoverageFields::from_tag(x).unwrap()),
+                            })
+                            .collect::<Vec<CoverageFields>>();
+
+                        // In grouped coverage field structs, the description contains a
+                        // concatenated description of the grouped reference sequences;
+                        // may need to modify later and add it to the group tags (tricky be)
+                        let segmented = match segment_field.clone() {
+                            Some(seg_field) => match segment_field_nan.clone() {
+                                Some(seg_field_nan) => {
+                                    let segment_tag_count =
+                                        cov_field.description.matches(&seg_field).count();
+                                    let segment_tag_na_count =
+                                        cov_field.description.matches(&seg_field_nan).count();
+                                    (segment_tag_count > 0)
+                                        && (segment_tag_na_count != segment_tag_count)
+                                }
+                                None => return Err(ReadAlignmentError::SegmentFieldNaNError),
+                            },
+                            None => false,
+                        };
+
+                        // VIROSAURUS GENE IDENTIFIER - RETAIN FOR OPTION LATER
+
+                        // let gene_split = (cov_field.tags.matches("GENE").count() > 0)
+                        //     || (cov_field.name.matches("GENE").count() > 0);
+
+                        // // Output all grouped reference sequences if segments are present (fix) or if the
+                        // // GENE identifier is present (e.g. Virosaurus) - this will put all sequences into
+                        // // a multi-FASTA
+
+                        // if gene_split {
+                        //     let name = &tags[0].name;
+                        //     let mut writer = get_sanitized_fasta_writer(name, &path).expect(
+                        //         "Could not get sanitized FASTA writer for GENE multi-FASTA",
+                        //     );
+                        //     for tag in &tags {
+                        //         let seq = &ref_seqs[&tag.name];
+                        //         writer.write_record(seq)?
+                        //     }
+                        // } else {
+
+                        // This is the output name using the grouping variable (e.g. taxonomic identifier)
+                        let cov_field_name = match cov_field.name.split_whitespace().next() {
+                            Some(str) => str,
+                            None => return Err(ReadAlignmentError::GroupSelectReferenceName),
+                        };
+
+                        // Filter reference sequences (contained in tags) by highest number
+                        // of mapped reads or coverage
+                        if segmented {
+                            // If the grouped sequences are segmented, group unique segments (from identifier)
+                            // and select the best segment of each group based on the group_select_by metric
+
+                            let grouped_segments = get_grouped_segments(
+                                tags,
+                                segment_field.clone(),
+                                group_sep.clone(),
+                            )?;
+
+                            let grouped_segment_selections =
+                                get_segment_selections(grouped_segments, group_select_by.clone())?;
+
+                            let seq_name = match group_select_order {
+                                true => {
+                                    format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
+                                }
+                                false => cov_field.name.to_string(),
+                            };
+
+                            let mut writer = get_sanitized_fasta_writer(&seq_name, &path)
+                                .expect("Could not get sanitized writer for segment multi-FASTA");
+
+                            for (_, segment_field) in grouped_segment_selections {
+                                let seq = &ref_seqs[&segment_field.name];
+                                writer.write_record(seq)?
+                            }
+                        } else {
+                            // If not segmented, simply select the best reference sequence using the
+                            // group_select_by metric and select the sequence from the header fields
+                            // to write to FASTA
+                            let max = match group_select_by.clone() {
                                 Some(value) => match value.as_str() {
-                                    "reads" => {
-                                        coverage_fields.sort_by(|a, b| b.reads.cmp(&a.reads));
-                                        coverage_fields
-                                    }
+                                    "reads" => tags.iter().max_by_key(|x| x.reads),
                                     "coverage" => {
-                                        coverage_fields.sort_by(|a, b| {
-                                            b.coverage.partial_cmp(&a.coverage).unwrap()
-                                        });
-                                        coverage_fields
+                                        tags.iter().max_by_key(|x| OrderedFloat(x.coverage))
                                     }
                                     _ => return Err(ReadAlignmentError::GroupSelectByError),
                                 },
-                                None => coverage_fields,
-                            },
-                            false => coverage_fields,
-                        };
-
-                        for (cov_field_idx, cov_field) in coverage_fields.iter().enumerate() {
-                            // In the grouped data the fields are itself contained in the tag
-                            // the following will produce a CoverageField for each tag using
-                            // the `from_tag` parsing method
-                            let tags = cov_field
-                                .tags
-                                .split("~~~")
-                                .into_iter()
-                                .filter_map(|x| match x {
-                                    "" => None,
-                                    _ => Some(CoverageFields::from_tag(x).unwrap()),
-                                })
-                                .collect::<Vec<CoverageFields>>();
-
-                            // In grouped coverage field structs, the description contains a
-                            // concatenated description of the grouped reference sequences;
-                            // may need to modify later and add it to the group tags (tricky be)
-                            let segmented = match segment_field.clone() {
-                                Some(seg_field) => match segment_field_nan.clone() {
-                                    Some(seg_field_nan) => {
-                                        let segment_tag_count =
-                                            cov_field.description.matches(&seg_field).count();
-                                        let segment_tag_na_count =
-                                            cov_field.description.matches(&seg_field_nan).count();
-                                        (segment_tag_count > 0)
-                                            && (segment_tag_na_count != segment_tag_count)
-                                    }
-                                    None => return Err(ReadAlignmentError::SegmentFieldNaNError),
-                                },
-                                None => false,
+                                None => return Err(ReadAlignmentError::GroupSelectByError),
                             };
 
-                            // VIROSAURUS GENE IDENTIFIER - RETAIN FOR OPTION LATER
+                            match max {
+                                Some(field) => {
+                                    let seq = &ref_seqs[&field.name];
 
-                            // let gene_split = (cov_field.tags.matches("GENE").count() > 0)
-                            //     || (cov_field.name.matches("GENE").count() > 0);
+                                    let seq_name = match group_select_order {
+                                        true => {
+                                            format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
+                                        }
+                                        false => cov_field_name.to_string(),
+                                    };
 
-                            // // Output all grouped reference sequences if segments are present (fix) or if the
-                            // // GENE identifier is present (e.g. Virosaurus) - this will put all sequences into
-                            // // a multi-FASTA
-
-                            // if gene_split {
-                            //     let name = &tags[0].name;
-                            //     let mut writer = get_sanitized_fasta_writer(name, &path).expect(
-                            //         "Could not get sanitized FASTA writer for GENE multi-FASTA",
-                            //     );
-                            //     for tag in &tags {
-                            //         let seq = &ref_seqs[&tag.name];
-                            //         writer.write_record(seq)?
-                            //     }
-                            // } else {
-
-                            // This is the output name using the grouping variable (e.g. taxonomic identifier)
-                            let cov_field_name = match cov_field.name.split_whitespace().next() {
-                                Some(str) => str,
-                                None => return Err(ReadAlignmentError::GroupSelectReferenceName),
-                            };
-
-                            // Filter reference sequences (contained in tags) by highest number
-                            // of mapped reads or coverage
-                            if segmented {
-                                // If the grouped sequences are segmented, group unique segments (from identifier)
-                                // and select the best segment of each group based on the group_select_by metric
-
-                                let grouped_segments = get_grouped_segments(
-                                    tags,
-                                    segment_field.clone(),
-                                    group_sep.clone(),
-                                )?;
-
-                                let grouped_segment_selections = get_segment_selections(
-                                    grouped_segments,
-                                    group_select_by.clone(),
-                                )?;
-
-                                let seq_name = match group_select_order {
-                                    true => {
-                                        format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
-                                    }
-                                    false => cov_field.name.to_string(),
-                                };
-
-                                let mut writer = get_sanitized_fasta_writer(&seq_name, &path)
-                                    .expect(
-                                        "Could not get sanitized writer for segment multi-FASTA",
-                                    );
-
-                                for (_, segment_field) in grouped_segment_selections {
-                                    let seq = &ref_seqs[&segment_field.name];
+                                    let mut writer = get_sanitized_fasta_writer(&seq_name, &path)
+                                        .expect("Could not get sanitized writer for single FASTA");
                                     writer.write_record(seq)?
                                 }
-                            } else {
-                                // If not segmented, simply select the best reference sequence using the
-                                // group_select_by metric and select the sequence from the header fields
-                                // to write to FASTA
-                                let max = match group_select_by.clone() {
-                                    Some(value) => match value.as_str() {
-                                        "reads" => tags.iter().max_by_key(|x| x.reads),
-                                        "coverage" => {
-                                            tags.iter().max_by_key(|x| OrderedFloat(x.coverage))
-                                        }
-                                        _ => return Err(ReadAlignmentError::GroupSelectByError),
-                                    },
-                                    None => return Err(ReadAlignmentError::GroupSelectByError),
-                                };
-
-                                match max {
-                                    Some(field) => {
-                                        let seq = &ref_seqs[&field.name];
-
-                                        let seq_name = match group_select_order {
-                                            true => {
-                                                format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
-                                            }
-                                            false => cov_field_name.to_string(),
-                                        };
-
-                                        let mut writer = get_sanitized_fasta_writer(
-                                            &seq_name, &path,
-                                        )
-                                        .expect("Could not get sanitized writer for single FASTA");
-                                        writer.write_record(seq)?
-                                    }
-                                    _ => return Err(ReadAlignmentError::GroupSelectReference),
-                                }
+                                _ => return Err(ReadAlignmentError::GroupSelectReference),
                             }
                         }
                     }
-                    _ => return Err(ReadAlignmentError::GroupSequenceError),
                 }
+                _ => return Err(ReadAlignmentError::GroupSequenceError),
             }
-            None => {}
         }
 
         Ok(())
@@ -831,6 +827,7 @@ impl ReadAlignment {
         coverage_fields: &[CoverageFields],
         grouped_regions: u64,
         grouped_coverage: f64,
+        grouped_alignments: u64,
         group_by: String,
         group_sep: String,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
@@ -903,7 +900,11 @@ impl ReadAlignment {
             grouped_fields.tags = grouped_fields.tags.trim_end_matches("~~~").to_string();
 
             grouped_fields.bases /= fields.len() as u64;
-            grouped_fields.coverage /= fields.len() as f64;
+
+            grouped_fields.coverage = match fields.iter().max_by_key(|x| OrderedFloat(x.coverage)) {
+                Some(fie) => fie.coverage,
+                None => return Err(ReadAlignmentError::GroupSelectCoverage),
+            };
 
             let unique_reads_grouped: Vec<String> =
                 ureads.iter().unique().map(|x| x.to_string()).collect();
@@ -913,6 +914,7 @@ impl ReadAlignment {
 
             if grouped_fields.regions >= grouped_regions
                 && grouped_fields.coverage >= grouped_coverage
+                && grouped_fields.alignments >= grouped_alignments
             {
                 grouped_coverage_fields.push(grouped_fields);
             }

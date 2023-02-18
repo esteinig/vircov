@@ -37,20 +37,21 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.coverage,
         args.regions_coverage,
         args.reads,
+        args.aligned,
         &args.group_by,
         verbose,
     )?;
 
     match args.group_by {
         None => {
-            match args.group_select_split {
-                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError),
-                None => {}
+            if args.group_select_split.is_some() {
+                return Err(ReadAlignmentError::GroupSelectSplitError);
             };
 
             align.to_output(
                 &mut data,
                 args.table,
+                args.header,
                 args.group_sep,
                 args.read_ids,
                 args.read_ids_split,
@@ -73,12 +74,14 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 &data,
                                 args.group_regions,
                                 args.group_coverage,
+                                args.group_aligned,
                                 group_field,
                                 args.group_sep.clone(),
                             )?;
                             align.to_output(
                                 &mut grouped_data,
                                 args.table,
+                                args.header,
                                 args.group_sep.clone(),
                                 args.read_ids,
                                 args.read_ids_split,

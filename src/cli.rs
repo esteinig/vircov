@@ -10,13 +10,13 @@ pub struct Cli {
     #[structopt(
         short, long, parse(try_from_os_str = check_file_exists), required = true
     )]
-    pub alignment: PathBuf, // TODO
+    pub alignment: PathBuf,
     /// bam: SAM/BAM/CRAM alignment; paf: PAF alignment
     ///
     /// Default is to attempt to infer the input alignment format automatically from the filename
     /// extension (bam|sam|cram|paf). This option is used to override that.
     #[structopt(
-        short = "A",
+        short = "i",
         long,
         value_name = "bam|paf",
         possible_values = &["bam", "paf"],
@@ -60,14 +60,14 @@ pub struct Cli {
     /// corresponding to the number of inferred alignment coverage regions.
     /// Tag fields are separated by vertical bars (|).
     ///
-    /// When no grouping argument is given then each tag consists of
-    ///     | start of coverage region
+    /// When no grouping argument is given then each tag consists of:
+    ///     start of coverage region
     ///     | end of coverage region
     ///     | number of alignments in the region
     ///
     /// When the output is grouped, then each tag consists of data from each
-    /// output that has been grouped
-    ///     | name of reference sequence
+    /// output that has been grouped:
+    ///     name of reference sequence
     ///     | number of regions
     ///     | number of reads in region
     ///     | number of alignments in region
@@ -77,19 +77,21 @@ pub struct Cli {
     ///     | reference sequence description header
     #[structopt(short, long, parse(from_occurrences = parse_verbosity))]
     pub verbose: u64,
-    /// Group outputs by a field in the reference sequence description
+    /// Group alignments by a field in the reference sequence description
     ///
     /// Grouping can help to summarize regions and other output statistics
-    /// aross all members of the group. Value specified as group should be
+    /// aross members of the alignment group. Value specified as group should be
     /// in the target sequence headers separated by a delimiter, for example
-    /// `taxid=1101 | species=MeanVirus` where one can group by either the
-    /// `taxid=` or `species=` fields (including comma). Alignment target
-    /// sequence are split by the delimiter `|` and the field value is
-    /// extracted for each alignment. Groups are summarized as follows:
-    /// distinct regions are summed, alignments are summed, unique reads are
-    /// recomputed across all members of the group, covered base pairs in the
-    /// alignments and reference sequence lengths are set to 0, and coverage
-    /// across all target sequences in the group is averaged.
+    /// `taxid=1101 | species=BadVirus` where one can group by either the
+    /// `taxid=` or `species=` fields. Alignment target sequence headers
+    /// are split by the delimiter `|` and the field value is extracted
+    /// with whitespace trimming for each alignment.
+    /// Groups are summarized as follows:
+    ///   - distinct regions are summed
+    ///   - alignments are summed
+    ///   - unique reads are recomputed across members of the group
+    ///   - covered base pairs in the reference sequence lengths are set to 0
+    ///   - coverage is selected to be the highest by a member of the group.
     #[structopt(short, long)]
     pub group_by: Option<String>,
     /// Group field separator in the reference sequence description
@@ -116,6 +118,11 @@ pub struct Cli {
     /// be estimated in underlying library.
     #[structopt(short = "T", long = "table")]
     pub table: bool,
+    /// Outputs a header in the non-table output  
+    ///
+    /// Adds a machine-readable header to the standard output
+    #[structopt(short = "H", long = "header")]
+    pub header: bool,
     /// Prints coverage plots
     ///
     /// Output coverage plots below the coverage statistics.
@@ -163,6 +170,11 @@ pub struct Cli {
     /// Filters results by a minimum coverage across the reference sequence
     #[structopt(short = "c", long = "coverage", default_value = "0")]
     pub coverage: f64,
+    /// Minimum aligned reads
+    ///
+    /// Filters results by a minimum aligned reads across the reference sequence
+    #[structopt(short = "a", long = "aligned", default_value = "0")]
+    pub aligned: u64,
     /// Minimum number of grouped coverage regions
     ///
     /// Filters results by a minimum number of grouped coverage regions, can be
@@ -175,6 +187,12 @@ pub struct Cli {
     /// across reference sequences if results are grouped
     #[structopt(long, default_value = "0")]
     pub group_coverage: f64,
+    /// Minimum grouped coverage alignments
+    ///
+    /// Filters results by a minimum number of alignments
+    /// across reference sequences if results are grouped
+    #[structopt(long, default_value = "0")]
+    pub group_aligned: u64,
     /// Output read identifiers of all alignments to file
     ///
     /// Creates a file (.txt) that contains the identifiers
