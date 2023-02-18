@@ -532,7 +532,10 @@ impl ReadAlignment {
                 _ => target_cov_n >= regions,
             };
 
+            let reads_aligned = targets.len() as u64;
+
             if target_len >= seq_len
+                && reads_aligned >= aligned
                 && region_filter_passed
                 && target_cov >= coverage
                 && unique_reads_n >= reads
@@ -542,7 +545,7 @@ impl ReadAlignment {
                     name: target_name.to_owned(),
                     regions: target_cov_n,
                     reads: unique_reads_n,
-                    alignments: targets.len() as u64,
+                    alignments: reads_aligned,
                     bases: target_cov_bp,
                     length: target_len,
                     coverage: target_cov,
