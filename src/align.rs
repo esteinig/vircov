@@ -56,28 +56,28 @@ pub enum ReadAlignmentError {
     FloatError(#[from] std::num::ParseFloatError),
     /// Indicates failure to conduct grouping because no reference sequences were parsed
     #[error("failed to group outputs due to missing reference sequences")]
-    GroupSequenceError(),
+    GroupSequenceError,
     /// Indicates failure to plot coverage when data is grouped
     #[error("coverage plots are not enabled when grouping output")]
-    GroupCovPlotError(),
+    GroupCovPlotError,
     /// Indicates failure to infer or identify file format from explicit option
     #[error("failed to parse a valid input format")]
-    InputFormatError(),
+    InputFormatError,
     /// Indicates failure when no grouping options are provided and selection is specified
     #[error("failed to use the group selection options becuase no grouping is specified")]
-    GroupSelectSplitError(),
+    GroupSelectSplitError,
     /// Indicates failure when no group select by is provided (should not occurr)
     #[error("failed to group select by reads or coverage")]
-    GroupSelectByError(),
+    GroupSelectByError,
     /// Indicates failure when no group select by is provided (should not occurr)
     #[error("failed to provide a negative segment field")]
-    SegmentFieldNaNError(),
+    SegmentFieldNaNError,
     /// Indicates failure when no best value from the grouped coverage fields could be selected
     #[error("failed to select a best reference sequence")]
-    GroupSelectReference(),
+    GroupSelectReference,
     /// Indicates failure when no reference name could be selected from the grouped identifier
     #[error("failed to extract a reference name from the grouped identifier")]
-    GroupSelectReferenceName(),
+    GroupSelectReferenceName,
 }
 
 /*
@@ -130,7 +130,7 @@ impl CoverageFields {
         )
     }
     fn from_tag(tag: &str) -> Result<Self, ReadAlignmentError> {
-        let fields: Vec<_> = tag.split("|").into_iter().collect();
+        let fields: Vec<_> = tag.split('|').into_iter().collect();
 
         Ok(Self {
             name: fields[0].to_string(),
@@ -238,7 +238,7 @@ fn parse_exclude(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, ReadAl
                 let content: String = line?;
                 let content: &str = content.trim();
 
-                if content.starts_with("#") || content.is_empty() {
+                if content.starts_with('|') || content.is_empty() {
                 } else {
                     exclude_vec.push(content.to_lowercase())
                 }
@@ -275,7 +275,7 @@ impl ReadAlignment {
         })
     }
     // Parse alignment by inferring format from file extension
-    pub fn from(
+    pub fn read(
         &mut self,
         // Path to alignment file [PAF or "-"]
         path: PathBuf,
@@ -290,21 +290,21 @@ impl ReadAlignment {
     ) -> Result<&Self, ReadAlignmentError> {
         match alignment_format {
             Some(format) => match format.as_str() {
-                "bam" => self.from_bam(path, min_qaln_len, min_qaln_cov, min_mapq),
-                "paf" => self.from_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
-                _ => Err(ReadAlignmentError::InputFormatError()),
+                "bam" => self.read_bam(path, min_qaln_len, min_qaln_cov, min_mapq),
+                "paf" => self.read_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
+                _ => Err(ReadAlignmentError::InputFormatError),
             },
             None => match path.extension().map(|s| s.to_str()) {
-                Some(Some("paf")) => self.from_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
+                Some(Some("paf")) => self.read_paf(path, min_qaln_len, min_qaln_cov, min_mapq),
                 Some(Some("bam") | Some("sam") | Some("cram")) => {
-                    self.from_bam(path, min_qaln_len, min_qaln_cov, min_mapq)
+                    self.read_bam(path, min_qaln_len, min_qaln_cov, min_mapq)
                 }
-                _ => Err(ReadAlignmentError::InputFormatError()),
+                _ => Err(ReadAlignmentError::InputFormatError),
             },
         }
     }
     // Parse alignments from file
-    pub fn from_paf(
+    pub fn read_paf(
         &mut self,
         // Path to alignment file [PAF or "-"]
         path: PathBuf,
@@ -361,7 +361,7 @@ impl ReadAlignment {
         Ok(self)
     }
     // Parse alignments from file
-    pub fn from_bam(
+    pub fn read_bam(
         &mut self,
         // Path to alignment file [SAM/BAM/CRAM or "-"]
         path: PathBuf,
@@ -424,7 +424,7 @@ impl ReadAlignment {
 
         Ok(self)
     }
-
+    #[allow(clippy::too_many_arguments)]
     /// Compute coverage distribution by target sequence
     pub fn coverage_statistics(
         &self,
@@ -551,8 +551,8 @@ impl ReadAlignment {
 
         Ok(coverage_fields)
     }
-
     #[cfg(not(tarpaulin_include))]
+    #[allow(clippy::too_many_arguments)]
     /// Print the coverage statistics to console, alternatively in pretty table format
     pub fn to_output(
         &self,
@@ -571,7 +571,7 @@ impl ReadAlignment {
             true => {
                 let table_fields = coverage_fields
                     .iter()
-                    .map(|x| CoverageTableFields::from(x))
+                    .map(CoverageTableFields::from)
                     .collect::<Vec<CoverageTableFields>>();
                 let _table = Table::new(table_fields)
                     .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
@@ -609,7 +609,7 @@ impl ReadAlignment {
                     .collect();
 
                 for read_id in all_unique_read_ids {
-                    write!(file_handle, "{}\n", &read_id)?;
+                    writeln!(file_handle, "{}", &read_id)?;
                 }
             }
             None => {}
@@ -619,15 +619,13 @@ impl ReadAlignment {
             Some(path) => {
                 std::fs::create_dir_all(&path)?;
                 for field in coverage_fields.iter_mut() {
-                    let sanitized_name = field.name.replace(" ", "_");
+                    let sanitized_name = field.name.replace(' ', "_");
                     let sanitized_name = sanitized_name.trim_matches(';'); // Virosaurus sanitize remainign header separator on seq id (weird format)
 
                     let file_path = path.join(&sanitized_name).with_extension("txt");
-                    let mut file_handle =
-                        File::create(file_path.as_path()).expect(&format!("Could not create file"));
+                    let mut file_handle = File::create(file_path.as_path())?;
                     for read_id in field.unique_reads.iter() {
-                        write!(file_handle, "{}\n", &read_id)
-                            .expect(&format!("Could not write read id {}", &read_id));
+                        writeln!(file_handle, "{}", &read_id)?
                     }
                 }
             }
@@ -654,7 +652,7 @@ impl ReadAlignment {
                                         });
                                         coverage_fields
                                     }
-                                    _ => return Err(ReadAlignmentError::GroupSelectByError()),
+                                    _ => return Err(ReadAlignmentError::GroupSelectByError),
                                 },
                                 None => coverage_fields,
                             },
@@ -688,7 +686,7 @@ impl ReadAlignment {
                                         (segment_tag_count > 0)
                                             && (segment_tag_na_count != segment_tag_count)
                                     }
-                                    None => return Err(ReadAlignmentError::SegmentFieldNaNError()),
+                                    None => return Err(ReadAlignmentError::SegmentFieldNaNError),
                                 },
                                 None => false,
                             };
@@ -716,7 +714,7 @@ impl ReadAlignment {
                             // This is the output name using the grouping variable (e.g. taxonomic identifier)
                             let cov_field_name = match cov_field.name.split_whitespace().next() {
                                 Some(str) => str,
-                                None => return Err(ReadAlignmentError::GroupSelectReferenceName()),
+                                None => return Err(ReadAlignmentError::GroupSelectReferenceName),
                             };
 
                             // Filter reference sequences (contained in tags) by highest number
@@ -740,7 +738,7 @@ impl ReadAlignment {
                                     true => {
                                         format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
                                     }
-                                    false => format!("{:}", &cov_field.name),
+                                    false => cov_field.name.to_string(),
                                 };
 
                                 let mut writer = get_sanitized_fasta_writer(&seq_name, &path)
@@ -762,9 +760,9 @@ impl ReadAlignment {
                                         "coverage" => {
                                             tags.iter().max_by_key(|x| OrderedFloat(x.coverage))
                                         }
-                                        _ => return Err(ReadAlignmentError::GroupSelectByError()),
+                                        _ => return Err(ReadAlignmentError::GroupSelectByError),
                                     },
-                                    None => return Err(ReadAlignmentError::GroupSelectByError()),
+                                    None => return Err(ReadAlignmentError::GroupSelectByError),
                                 };
 
                                 match max {
@@ -775,7 +773,7 @@ impl ReadAlignment {
                                             true => {
                                                 format!("{:0>2}-{:}", cov_field_idx, cov_field_name)
                                             }
-                                            false => format!("{:}", cov_field_name),
+                                            false => cov_field_name.to_string(),
                                         };
 
                                         let mut writer = get_sanitized_fasta_writer(
@@ -784,12 +782,12 @@ impl ReadAlignment {
                                         .expect("Could not get sanitized writer for single FASTA");
                                         writer.write_record(seq)?
                                     }
-                                    _ => return Err(ReadAlignmentError::GroupSelectReference()),
+                                    _ => return Err(ReadAlignmentError::GroupSelectReference),
                                 }
                             }
                         }
                     }
-                    _ => return Err(ReadAlignmentError::GroupSequenceError()),
+                    _ => return Err(ReadAlignmentError::GroupSequenceError),
                 }
             }
             None => {}
@@ -848,7 +846,7 @@ impl ReadAlignment {
                             entry.get_mut().push(cov_field);
                         }
                         Entry::Vacant(entry) => {
-                            entry.insert(vec![&cov_field]);
+                            entry.insert(vec![cov_field]);
                         }
                     }
                 }
@@ -880,13 +878,13 @@ impl ReadAlignment {
 
                 if !grouped_fields.description.contains(&field.description) {
                     grouped_fields.description.push_str(&field.description);
-                    grouped_fields.description.push_str(" ");
+                    grouped_fields.description.push(' ');
                 }
 
                 match field.tags.as_str() {
                     "-" => {
-                        if !grouped_fields.tags.contains("-") {
-                            grouped_fields.tags.push_str("-");
+                        if !grouped_fields.tags.contains('-') {
+                            grouped_fields.tags.push('-');
                         }
                     }
                     _ => {
@@ -904,8 +902,8 @@ impl ReadAlignment {
             // Trim the last grouped tag separator introduced by the field loop above (~~~)
             grouped_fields.tags = grouped_fields.tags.trim_end_matches("~~~").to_string();
 
-            grouped_fields.bases = grouped_fields.bases / fields.len() as u64;
-            grouped_fields.coverage = grouped_fields.coverage / fields.len() as f64;
+            grouped_fields.bases /= fields.len() as u64;
+            grouped_fields.coverage /= fields.len() as f64;
 
             let unique_reads_grouped: Vec<String> =
                 ureads.iter().unique().map(|x| x.to_string()).collect();
@@ -1075,6 +1073,7 @@ mod tests {
     ===============
     */
 
+    #[allow(dead_code)]
     struct TestCases {
         // Valid PafRecord
         paf_record_ok: PafRecord,

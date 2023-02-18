@@ -23,7 +23,7 @@ fn main() -> Result<(), ReadAlignmentError> {
 
     let mut align = ReadAlignment::new(&args.fasta, &args.exclude)?;
 
-    let align = align.from(
+    let align = align.read(
         args.alignment,
         args.min_len,
         args.min_cov,
@@ -44,7 +44,7 @@ fn main() -> Result<(), ReadAlignmentError> {
     match args.group_by {
         None => {
             match args.group_select_split {
-                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError()),
+                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError),
                 None => {}
             };
 
@@ -63,10 +63,10 @@ fn main() -> Result<(), ReadAlignmentError> {
         }
         Some(group_field) => {
             match align.target_sequences {
-                None => return Err(ReadAlignmentError::GroupSequenceError()),
+                None => return Err(ReadAlignmentError::GroupSequenceError),
                 Some(_) => {
                     match args.covplot {
-                        true => return Err(ReadAlignmentError::GroupCovPlotError()),
+                        true => return Err(ReadAlignmentError::GroupCovPlotError),
                         false => {
                             // If reference sequences have been provided, continue with grouping outputs
                             let mut grouped_data = align.group_output(

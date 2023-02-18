@@ -4,7 +4,7 @@ codecov:
 coverage:
   precision: 2
   round: up
-  range: "75...100"  # The value range where you want the value to be green
+  range: "0...100"  # The value range where you want the value to be green
 
 parsers:
   gcov:

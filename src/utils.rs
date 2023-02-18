@@ -1,6 +1,6 @@
 use crate::align::CoverageFields;
 use crate::align::ReadAlignmentError;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use ordered_float::OrderedFloat;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -8,12 +8,11 @@ use std::fs::File;
 
 pub fn get_sanitized_fasta_writer(
     name: &str,
-    path: &std::path::PathBuf,
-) -> Result<noodles::fasta::Writer<File>, Error> {
-    let sanitized_name = name.replace(" ", "_");
+    path: &std::path::Path,
+) -> Result<noodles::fasta::Writer<File>, ReadAlignmentError> {
+    let sanitized_name = name.replace(' ', "_");
     let file_path = path.join(&sanitized_name).with_extension("fasta");
-    let file_handle =
-        std::fs::File::create(file_path.as_path()).expect(&format!("Could not create fasta file"));
+    let file_handle = std::fs::File::create(file_path.as_path())?;
 
     Ok(noodles::fasta::Writer::new(file_handle))
 }
@@ -54,7 +53,7 @@ pub fn get_grouped_segments(
             }
             Ok(grouped_segments)
         }
-        None => return Err(ReadAlignmentError::GroupSelectSplitError()),
+        None => Err(ReadAlignmentError::GroupSelectSplitError),
     }
 }
 
@@ -70,22 +69,22 @@ pub fn get_segment_selections(
             Some(value) => match value.as_str() {
                 "reads" => cov_fields.iter().max_by_key(|x| x.reads),
                 "coverage" => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                _ => return Err(ReadAlignmentError::GroupSelectByError()),
+                _ => return Err(ReadAlignmentError::GroupSelectByError),
             },
-            None => return Err(ReadAlignmentError::GroupSelectByError()),
+            None => return Err(ReadAlignmentError::GroupSelectByError),
         };
 
         match selected {
             Some(selected_cov_field) => {
-                let sanitized_name = selected_cov_field.name.replace(" ", "_");
+                let sanitized_name = selected_cov_field.name.replace(' ', "_");
                 let sanitized_name = sanitized_name.trim_matches(';');
                 let segment_sanitized = segment.trim_matches(' ').to_string(); // trim whitespaces from segment field
                 let seg_name = format!("{}_{}", sanitized_name, segment_sanitized);
                 selected_segments
                     .entry(seg_name)
-                    .or_insert(selected_cov_field.clone());
+                    .or_insert_with(|| selected_cov_field.clone());
             }
-            None => return Err(ReadAlignmentError::GroupSelectReference()),
+            None => return Err(ReadAlignmentError::GroupSelectReference),
         }
     }
 
