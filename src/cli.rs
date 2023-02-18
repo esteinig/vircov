@@ -8,7 +8,7 @@ use structopt::StructOpt;
 pub struct Cli {
     /// Alignment file (SAM/BAM/CRAM/PAF)
     #[structopt(
-        short, long, parse(try_from_os_str = check_file_exists), required = true
+        short = "i", long, parse(try_from_os_str = check_file_exists), required = true
     )]
     pub alignment: PathBuf,
     /// bam: SAM/BAM/CRAM alignment; paf: PAF alignment
@@ -16,7 +16,6 @@ pub struct Cli {
     /// Default is to attempt to infer the input alignment format automatically from the filename
     /// extension (bam|sam|cram|paf). This option is used to override that.
     #[structopt(
-        short = "i",
         long,
         value_name = "bam|paf",
         possible_values = &["bam", "paf"],
@@ -92,7 +91,7 @@ pub struct Cli {
     ///   - unique reads are recomputed across members of the group
     ///   - covered base pairs in the reference sequence lengths are set to 0
     ///   - coverage is selected to be the highest by a member of the group.
-    #[structopt(short, long)]
+    #[structopt(short = "g", long)]
     pub group_by: Option<String>,
     /// Group field separator in the reference sequence description
     ///
@@ -100,7 +99,7 @@ pub struct Cli {
     /// sequences (e.g. taxid=1101 | taxname=argh). A delimitor needs to
     /// be specified to signal the end of a specific grouping field
     /// (e.g. --group-sep "|" with --group-by "taxid=").
-    #[structopt(long, default_value = ";")]
+    #[structopt(short = "s", long, default_value = ";")]
     pub group_sep: String,
     /// A file with a string per line to exclude alignments
     /// if the string occurs in the target sequence description
