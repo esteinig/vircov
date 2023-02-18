@@ -159,7 +159,7 @@ pub struct CoverageTableFields {
     #[header("Regions")]
     /// Number of non-overlapping alignment regions
     regions: u64,
-    #[header("Aligned Reads")]
+    #[header("Reads")]
     /// Number of unique reads aligned
     reads: u64,
     #[header("Alignments")]
@@ -565,6 +565,7 @@ impl ReadAlignment {
         &self,
         coverage_fields: &mut [CoverageFields],
         table: bool,
+        header: bool,
         group_sep: String,
         read_ids: Option<PathBuf>,
         read_ids_split: Option<PathBuf>,
@@ -586,6 +587,9 @@ impl ReadAlignment {
                 println!("{}", _table)
             }
             false => {
+                if header {
+                    println!("sequence\tregions\treads\talignments\tbases\tlength\tcoverage\tdescription\ttags")
+                }
                 for cov_fields in coverage_fields.iter_mut() {
                     println!(
                         "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",

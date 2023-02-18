@@ -51,6 +51,7 @@ fn main() -> Result<(), ReadAlignmentError> {
             align.to_output(
                 &mut data,
                 args.table,
+                args.header,
                 args.group_sep,
                 args.read_ids,
                 args.read_ids_split,
@@ -80,6 +81,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                             align.to_output(
                                 &mut grouped_data,
                                 args.table,
+                                args.header,
                                 args.group_sep.clone(),
                                 args.read_ids,
                                 args.read_ids_split,

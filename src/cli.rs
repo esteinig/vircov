@@ -118,6 +118,11 @@ pub struct Cli {
     /// be estimated in underlying library.
     #[structopt(short = "T", long = "table")]
     pub table: bool,
+    /// Outputs a header in the non-table output  
+    ///
+    /// Adds a machine-readable header to the standard output
+    #[structopt(short = "H", long = "header")]
+    pub header: bool,
     /// Prints coverage plots
     ///
     /// Output coverage plots below the coverage statistics.
