@@ -1,12 +1,12 @@
 [package]
-rust-version = "1.58"
+rust-version = "1.63"
 name = "vircov"
-version = "0.4.0"
+version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
-description = "Vircov: genome coverage assessment for viral metagenomic diagnostics"
-documentation = "https://github.com/esteinig/vircov"
-homepage = "https://github.com/esteinig/vircov"
-repository = "https://github.com/esteinig/vircov"
+description = "Vircov: genome coverage tools for metagenomic diagnostics of viral pathogens"
+documentation = "https://github.com/esteinig/metacov"
+homepage = "https://github.com/esteinig/metacov"
+repository = "https://github.com/esteinig/metacov"
 readme = "README.md"
 keywords = ["meta-gp", "viral", "metagenomics", "coverage", "diagnostics"]
 categories = ["science"]
@@ -19,7 +19,6 @@ include = [
 ]
 
 [dependencies]
-bio = "0.40"
 anyhow = "1.0"
 clap = "2.33.0"
 tabled = "0.5.0"
@@ -29,7 +28,8 @@ crossterm = "0.23.0"
 itertools = "0.10.3"
 rust-htslib = "0.38"
 rust-lapper = "1.0.0"
-
+ordered-float = "3.0.0"
+noodles = { version = "0.20.0", features = ["fasta"] }
 
 [dev-dependencies]
 assert_cmd = "2.0.1"

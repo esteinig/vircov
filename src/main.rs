@@ -1,12 +1,12 @@
-use anyhow::Result;
-use structopt::StructOpt;
-
 use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::cli::Cli;
+use anyhow::Result;
+use structopt::StructOpt;
 
 mod align;
 mod cli;
 mod covplot;
+mod utils;
 
 /// Vircov application
 ///
@@ -16,27 +16,87 @@ mod covplot;
 fn main() -> Result<(), ReadAlignmentError> {
     let args = Cli::from_args();
 
-    let alignment = match args.paf {
-        Some(path) => {
-            ReadAlignment::from_paf(path, args.fasta, args.min_len, args.min_cov, args.min_mapq)?
-        }
-        None => match args.bam {
-            None => return Err(ReadAlignmentError::FileInputError()),
-            Some(path) => ReadAlignment::from_bam(
-                path,
-                args.fasta,
-                args.min_len,
-                args.min_cov,
-                args.min_mapq,
-            )?,
-        },
+    let verbose = match args.group_select_split {
+        Some(_) => 2, // for group refseq selection we need the tags
+        None => args.verbose,
     };
 
-    let data = alignment.coverage_statistics(args.regions, args.seq_len, args.verbose)?;
-    alignment.to_console(&data, args.table)?;
+    let mut align = ReadAlignment::new(&args.fasta, &args.exclude)?;
+
+    let align = align.from(
+        args.alignment,
+        args.min_len,
+        args.min_cov,
+        args.min_mapq,
+        args.alignment_format,
+    )?;
+
+    let mut data = align.coverage_statistics(
+        args.regions,
+        args.seq_len,
+        args.coverage,
+        args.regions_coverage,
+        args.reads,
+        &args.group_by,
+        verbose,
+    )?;
+
+    match args.group_by {
+        None => {
+            match args.group_select_split {
+                Some(_) => return Err(ReadAlignmentError::GroupSelectSplitError()),
+                None => {}
+            };
+
+            align.to_output(
+                &mut data,
+                args.table,
+                args.group_sep,
+                args.read_ids,
+                args.read_ids_split,
+                None,
+                None,
+                false,
+                args.segment_field,
+                args.segment_field_nan,
+            )?;
+        }
+        Some(group_field) => {
+            match align.target_sequences {
+                None => return Err(ReadAlignmentError::GroupSequenceError()),
+                Some(_) => {
+                    match args.covplot {
+                        true => return Err(ReadAlignmentError::GroupCovPlotError()),
+                        false => {
+                            // If reference sequences have been provided, continue with grouping outputs
+                            let mut grouped_data = align.group_output(
+                                &data,
+                                args.group_regions,
+                                args.group_coverage,
+                                group_field,
+                                args.group_sep.clone(),
+                            )?;
+                            align.to_output(
+                                &mut grouped_data,
+                                args.table,
+                                args.group_sep.clone(),
+                                args.read_ids,
+                                args.read_ids_split,
+                                args.group_select_by,
+                                args.group_select_split,
+                                args.group_select_order,
+                                args.segment_field,
+                                args.segment_field_nan,
+                            )?;
+                        }
+                    };
+                }
+            }
+        }
+    };
 
     match args.covplot {
-        true => alignment.coverage_plots(&data, args.width)?,
+        true => align.coverage_plots(&data, args.width)?,
         false => {}
     }
 
