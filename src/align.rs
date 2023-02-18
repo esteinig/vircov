@@ -898,7 +898,7 @@ impl ReadAlignment {
             grouped_fields.bases /= fields.len() as u64;
 
             grouped_fields.coverage = match fields.iter().max_by_key(|x| OrderedFloat(x.coverage)) {
-                Some(fie) => fie.coverage.clone(),
+                Some(fie) => fie.coverage,
                 None => return Err(ReadAlignmentError::GroupSelectCoverage),
             };
 

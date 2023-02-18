@@ -44,7 +44,7 @@ fn main() -> Result<(), ReadAlignmentError> {
 
     match args.group_by {
         None => {
-            if let Some(_) = args.group_select_split {
+            if args.group_select_split.is_some() {
                 return Err(ReadAlignmentError::GroupSelectSplitError);
             };
 
