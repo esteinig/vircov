@@ -40,6 +40,7 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.aligned,
         &args.group_by,
         verbose,
+        args.zero,
     )?;
 
     match args.group_by {

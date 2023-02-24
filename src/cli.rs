@@ -250,6 +250,13 @@ pub struct Cli {
     /// grroups in which all alignments are negative.
     #[structopt(long)]
     pub segment_field_nan: Option<String>,
+    /// Output zero-statistics reference alignments
+    ///
+    /// This option can be used to include reference sequences with and without alignments. Only
+    /// for ungrouped alignments. Requires --fasta or will throw error. If filters are activated,
+    /// this option will include all filtered sequences except statistics are now SET TO ZERO.
+    #[structopt(short = "z", long = "zero")]
+    pub zero: bool,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {

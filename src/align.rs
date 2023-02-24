@@ -81,6 +81,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure when no coverage value could be extracted from a group of coverage fields
     #[error("failed to extract the highest coverage value from the grouped fields")]
     GroupSelectCoverage,
+    /// Indicates failure when zero-value reference sequences should be included, but no reference sequences were provided
+    #[error("no reference sequences found, zero-value records cannot be included")]
+    ZeroReferenceSequences,
 }
 
 /*
@@ -439,8 +442,11 @@ impl ReadAlignment {
         aligned: u64,
         group_by: &Option<String>,
         verbosity: u64,
+        zero: bool,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
         let mut coverage_fields: Vec<CoverageFields> = Vec::new();
+        let mut included_references: Vec<String> = Vec::new();
+
         for (target_name, targets) in &self.target_intervals {
             // Bases of target sequence covered
             let target_cov_bp = targets.cov() as u64;
@@ -553,6 +559,39 @@ impl ReadAlignment {
                     unique_reads: unique_read_ids,
                     tags: target_tags,
                 });
+                // For zero count checks below
+                included_references.push(target_name.to_owned())
+            }
+        }
+
+        if zero {
+            // This will add all reference sequences as null fields
+            // to the coverage field data - beware that this will
+            // include these sequences in grouped output
+            match &self.target_sequences {
+                Some(ref_seqs) => {
+                    for (ref_seq, record) in ref_seqs.iter() {
+                        if !included_references.contains(ref_seq) {
+                            let descr = match record.description() {
+                                None => "-".to_string(),
+                                Some(descr) => descr.to_owned(),
+                            };
+                            coverage_fields.push(CoverageFields {
+                                name: ref_seq.to_owned(),
+                                regions: 0,
+                                reads: 0,
+                                alignments: 0,
+                                bases: 0,
+                                length: record.sequence().len() as u64,
+                                coverage: 0.0,
+                                description: descr,
+                                unique_reads: Vec::new(),
+                                tags: "-".to_string(),
+                            });
+                        }
+                    }
+                }
+                None => return Err(ReadAlignmentError::ZeroReferenceSequences),
             }
         }
 
