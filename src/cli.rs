@@ -232,6 +232,12 @@ pub struct Cli {
     /// Output selected sequences with a numeric prefix sorted by descending reads or coverage (--group-select-by)
     #[structopt(short = "G", long = "group-select-order")]
     pub group_select_order: bool,
+    /// Output selected group summary data (coverage alignment data) to this file.
+    ///
+    /// Ungrouped summary is output to stdout. This is specifically to allow for combining
+    /// scanning and remapping steps in the Cerebro pipeline.
+    #[structopt(short = "D", long = "group-select-data")]
+    pub group_select_data: Option<PathBuf>,
     /// Segment field identifier (e.g. "segment=")
     ///
     /// Use this value to identify segment fields in the referennce headers of grouped
