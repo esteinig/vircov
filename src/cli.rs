@@ -280,7 +280,7 @@ fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
 /// are specified (-vv) the highest value is returned
 fn parse_verbosity(v: u64) -> u64 {
     match v {
-        0 | 1 | 2 => v,
+        0..=2 => v,
         _ => 2,
     }
 }

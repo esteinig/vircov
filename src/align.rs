@@ -136,7 +136,7 @@ impl CoverageFields {
         )
     }
     fn from_tag(tag: &str) -> Result<Self, ReadAlignmentError> {
-        let fields: Vec<_> = tag.split('|').into_iter().collect();
+        let fields: Vec<_> = tag.split('|').collect();
 
         Ok(Self {
             name: fields[0].to_string(),
@@ -691,7 +691,6 @@ impl ReadAlignment {
                         let tags = cov_field
                             .tags
                             .split("~~~")
-                            .into_iter()
                             .filter_map(|x| match x {
                                 "" => None,
                                 _ => Some(CoverageFields::from_tag(x).unwrap()),
@@ -1339,7 +1338,7 @@ mod tests {
     #[test]
     fn query_alignment_length_from_cigar_match() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
-        let cigars = vec![Cigar::Match(149)];
+        let cigars = [Cigar::Match(149)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1348,7 +1347,7 @@ mod tests {
     fn query_alignment_length_from_cigar_with_del() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
         // Deletion is not considered
-        let cigars = vec![Cigar::Match(8), Cigar::Del(1), Cigar::Match(141)];
+        let cigars = [Cigar::Match(8), Cigar::Del(1), Cigar::Match(141)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1356,7 +1355,7 @@ mod tests {
     #[test]
     fn query_alignment_length_from_cigar_with_ins() {
         // Insertion is considered
-        let cigars = vec![Cigar::Match(7), Cigar::Ins(1), Cigar::Match(141)];
+        let cigars = [Cigar::Match(7), Cigar::Ins(1), Cigar::Match(141)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1365,7 +1364,7 @@ mod tests {
     fn query_alignment_length_from_cigar_with_indel() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
         // Insertion is considered, Deletion is not considered
-        let cigars = vec![
+        let cigars = [
             Cigar::Match(35),
             Cigar::Del(3),
             Cigar::Match(15),

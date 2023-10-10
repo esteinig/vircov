@@ -1,5 +1,5 @@
 [package]
-rust-version = "1.67"
+rust-version = "1.70"
 name = "vircov"
 version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
