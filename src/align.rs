@@ -620,7 +620,7 @@ impl ReadAlignment {
         // of the selected group members as primary output and the grouped data
         // as file output
         match group_select_split {
-            None => self.write_table(&coverage_fields, table, header, None)?,
+            None => self.write_table(coverage_fields, table, header, None)?,
             Some(_) => {}
         }
 
@@ -811,22 +811,16 @@ impl ReadAlignment {
                     // We should now write a table of the selected identifiers from each group, so that the results are not group results at this stage
                     // (also written but these have the group summary values, not the individual alignment summaries of the selected sequences)
 
-                    match (&ungrouped_fields, &group_select_split) {
-                        (Some(ungrouped_fields), Some(_)) => {
-                            let selected_ungrouped_fields: Vec<CoverageFields> = ungrouped_fields
-                                .into_iter()
-                                .filter(|field| selected_output_identifiers.contains(&field.name))
-                                .map(|x| x.clone())
-                                .collect();
-                            self.write_table(&selected_ungrouped_fields, table, header, None)?;
-                            self.write_table(
-                                &coverage_fields,
-                                table,
-                                header,
-                                group_select_data.clone(),
-                            )?;
-                        }
-                        _ => {}
+                    if let (Some(ungrouped_fields), Some(_)) =
+                        (&ungrouped_fields, &group_select_split)
+                    {
+                        let selected_ungrouped_fields: Vec<CoverageFields> = ungrouped_fields
+                            .iter()
+                            .filter(|field| selected_output_identifiers.contains(&field.name))
+                            .cloned()
+                            .collect();
+                        self.write_table(&selected_ungrouped_fields, table, header, None)?;
+                        self.write_table(coverage_fields, table, header, group_select_data)?;
                     };
                 }
                 _ => return Err(ReadAlignmentError::GroupSequenceError),
@@ -837,7 +831,7 @@ impl ReadAlignment {
     }
     pub fn write_table(
         &self,
-        coverage_fields: &Vec<CoverageFields>,
+        coverage_fields: &[CoverageFields],
         table: bool,
         header: bool,
         file: Option<PathBuf>,
