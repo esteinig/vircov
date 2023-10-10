@@ -1,17 +1,17 @@
 [package]
-rust-version = "1.63"
+rust-version = "1.70"
 name = "vircov"
 version = "0.6.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
 description = "Vircov: genome coverage tools for metagenomic diagnostics of viral pathogens"
-documentation = "https://github.com/esteinig/metacov"
-homepage = "https://github.com/esteinig/metacov"
-repository = "https://github.com/esteinig/metacov"
+documentation = "https://github.com/esteinig/vircov"
+homepage = "https://github.com/esteinig/vircov"
+repository = "https://github.com/esteinig/vircov"
 readme = "README.md"
 keywords = ["meta-gp", "viral", "metagenomics", "coverage", "diagnostics"]
 categories = ["science"]
 license = "MIT"
-edition = "2018"
+edition = "2021"
 include = [
     "**/*.rs",
     "src/data/*",

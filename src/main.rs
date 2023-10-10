@@ -40,6 +40,7 @@ fn main() -> Result<(), ReadAlignmentError> {
         args.aligned,
         &args.group_by,
         verbose,
+        args.zero,
     )?;
 
     match args.group_by {
@@ -50,6 +51,7 @@ fn main() -> Result<(), ReadAlignmentError> {
 
             align.to_output(
                 &mut data,
+                None,
                 args.table,
                 args.header,
                 args.group_sep,
@@ -58,6 +60,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                 None,
                 None,
                 false,
+                None,
                 args.segment_field,
                 args.segment_field_nan,
             )?;
@@ -69,6 +72,9 @@ fn main() -> Result<(), ReadAlignmentError> {
                     match args.covplot {
                         true => return Err(ReadAlignmentError::GroupCovPlotError),
                         false => {
+                            // Make a clone of the original alignment data
+                            let ungrouped_data = Some(data.clone());
+
                             // If reference sequences have been provided, continue with grouping outputs
                             let mut grouped_data = align.group_output(
                                 &data,
@@ -81,6 +87,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                             )?;
                             align.to_output(
                                 &mut grouped_data,
+                                ungrouped_data,
                                 args.table,
                                 args.header,
                                 args.group_sep.clone(),
@@ -89,6 +96,7 @@ fn main() -> Result<(), ReadAlignmentError> {
                                 args.group_select_by,
                                 args.group_select_split,
                                 args.group_select_order,
+                                args.group_select_data,
                                 args.segment_field,
                                 args.segment_field_nan,
                             )?;

@@ -81,6 +81,9 @@ pub enum ReadAlignmentError {
     /// Indicates failure when no coverage value could be extracted from a group of coverage fields
     #[error("failed to extract the highest coverage value from the grouped fields")]
     GroupSelectCoverage,
+    /// Indicates failure when zero-value reference sequences should be included, but no reference sequences were provided
+    #[error("no reference sequences found, zero-value records cannot be included")]
+    ZeroReferenceSequences,
 }
 
 /*
@@ -133,7 +136,7 @@ impl CoverageFields {
         )
     }
     fn from_tag(tag: &str) -> Result<Self, ReadAlignmentError> {
-        let fields: Vec<_> = tag.split('|').into_iter().collect();
+        let fields: Vec<_> = tag.split('|').collect();
 
         Ok(Self {
             name: fields[0].to_string(),
@@ -439,8 +442,11 @@ impl ReadAlignment {
         aligned: u64,
         group_by: &Option<String>,
         verbosity: u64,
+        zero: bool,
     ) -> Result<Vec<CoverageFields>, ReadAlignmentError> {
         let mut coverage_fields: Vec<CoverageFields> = Vec::new();
+        let mut included_references: Vec<String> = Vec::new();
+
         for (target_name, targets) in &self.target_intervals {
             // Bases of target sequence covered
             let target_cov_bp = targets.cov() as u64;
@@ -553,6 +559,39 @@ impl ReadAlignment {
                     unique_reads: unique_read_ids,
                     tags: target_tags,
                 });
+                // For zero count checks below
+                included_references.push(target_name.to_owned())
+            }
+        }
+
+        if zero {
+            // This will add all reference sequences as null fields
+            // to the coverage field data - beware that this will
+            // include these sequences in grouped output
+            match &self.target_sequences {
+                Some(ref_seqs) => {
+                    for (ref_seq, record) in ref_seqs.iter() {
+                        if !included_references.contains(ref_seq) {
+                            let descr = match record.description() {
+                                None => "-".to_string(),
+                                Some(descr) => descr.to_owned(),
+                            };
+                            coverage_fields.push(CoverageFields {
+                                name: ref_seq.to_owned(),
+                                regions: 0,
+                                reads: 0,
+                                alignments: 0,
+                                bases: 0,
+                                length: record.sequence().len() as u64,
+                                coverage: 0.0,
+                                description: descr,
+                                unique_reads: Vec::new(),
+                                tags: "-".to_string(),
+                            });
+                        }
+                    }
+                }
+                None => return Err(ReadAlignmentError::ZeroReferenceSequences),
             }
         }
 
@@ -563,7 +602,8 @@ impl ReadAlignment {
     /// Print the coverage statistics to console, alternatively in pretty table format
     pub fn to_output(
         &self,
-        coverage_fields: &mut [CoverageFields],
+        coverage_fields: &mut Vec<CoverageFields>, // If grouped, these are grouped fields
+        ungrouped_fields: Option<Vec<CoverageFields>>, // if grouped, ungrouped fields should be passed for select output writing
         table: bool,
         header: bool,
         group_sep: String,
@@ -572,39 +612,16 @@ impl ReadAlignment {
         group_select_by: Option<String>,
         group_select_split: Option<PathBuf>,
         group_select_order: bool,
+        group_select_data: Option<PathBuf>,
         segment_field: Option<String>,
         segment_field_nan: Option<String>,
     ) -> Result<(), ReadAlignmentError> {
-        match table {
-            true => {
-                let table_fields = coverage_fields
-                    .iter()
-                    .map(CoverageTableFields::from)
-                    .collect::<Vec<CoverageTableFields>>();
-                let _table = Table::new(table_fields)
-                    .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
-                    .with(Style::modern());
-                println!("{}", _table)
-            }
-            false => {
-                if header {
-                    println!("sequence\tregions\treads\talignments\tbases\tlength\tcoverage\tdescription\ttags")
-                }
-                for cov_fields in coverage_fields.iter_mut() {
-                    println!(
-                        "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",
-                        cov_fields.name,
-                        cov_fields.regions,
-                        cov_fields.reads,
-                        cov_fields.alignments,
-                        cov_fields.bases,
-                        cov_fields.length,
-                        cov_fields.coverage,
-                        cov_fields.description,
-                        cov_fields.tags
-                    )
-                }
-            }
+        // If grouped and selected we skip as we want the  ungrouped summary
+        // of the selected group members as primary output and the grouped data
+        // as file output
+        match group_select_split {
+            None => self.write_table(coverage_fields, table, header, None)?,
+            Some(_) => {}
         }
 
         // Non grouped data unique read outputs + grouped
@@ -637,7 +654,7 @@ impl ReadAlignment {
             }
         }
 
-        if let Some(path) = group_select_split {
+        if let Some(path) = group_select_split.clone() {
             match &self.target_sequences {
                 Some(ref_seqs) => {
                     std::fs::create_dir_all(&path)?;
@@ -663,6 +680,10 @@ impl ReadAlignment {
                         false => coverage_fields,
                     };
 
+                    // Store the reference identifiers of the selected grouped outputs
+                    // to write a summary of the ungrouped field data for these
+                    let mut selected_output_identifiers = Vec::new();
+
                     for (cov_field_idx, cov_field) in coverage_fields.iter().enumerate() {
                         // In the grouped data the fields are itself contained in the tag
                         // the following will produce a CoverageField for each tag using
@@ -670,7 +691,6 @@ impl ReadAlignment {
                         let tags = cov_field
                             .tags
                             .split("~~~")
-                            .into_iter()
                             .filter_map(|x| match x {
                                 "" => None,
                                 _ => Some(CoverageFields::from_tag(x).unwrap()),
@@ -748,7 +768,8 @@ impl ReadAlignment {
 
                             for (_, segment_field) in grouped_segment_selections {
                                 let seq = &ref_seqs[&segment_field.name];
-                                writer.write_record(seq)?
+                                writer.write_record(seq)?;
+                                selected_output_identifiers.push(segment_field.name);
                             }
                         } else {
                             // If not segmented, simply select the best reference sequence using the
@@ -778,18 +799,98 @@ impl ReadAlignment {
 
                                     let mut writer = get_sanitized_fasta_writer(&seq_name, &path)
                                         .expect("Could not get sanitized writer for single FASTA");
-                                    writer.write_record(seq)?
+                                    writer.write_record(seq)?;
+                                    selected_output_identifiers.push(field.name.clone());
                                 }
                                 _ => return Err(ReadAlignmentError::GroupSelectReference),
                             }
                         }
                     }
+
+                    // We should now write a table of the selected identifiers from each group, so that the results are not group results at this stage
+                    // (also written but these have the group summary values, not the individual alignment summaries of the selected sequences)
+
+                    if let (Some(ungrouped_fields), Some(_)) =
+                        (&ungrouped_fields, &group_select_split)
+                    {
+                        let selected_ungrouped_fields: Vec<CoverageFields> = ungrouped_fields
+                            .iter()
+                            .filter(|field| selected_output_identifiers.contains(&field.name))
+                            .cloned()
+                            .collect();
+                        self.write_table(&selected_ungrouped_fields, table, header, None)?;
+                        self.write_table(coverage_fields, table, header, group_select_data)?;
+                    };
                 }
                 _ => return Err(ReadAlignmentError::GroupSequenceError),
             }
         }
 
         Ok(())
+    }
+    pub fn write_table(
+        &self,
+        coverage_fields: &[CoverageFields],
+        table: bool,
+        header: bool,
+        file: Option<PathBuf>,
+    ) -> Result<(), ReadAlignmentError> {
+        match table {
+            true => {
+                let table_fields = coverage_fields
+                    .iter()
+                    .map(CoverageTableFields::from)
+                    .collect::<Vec<CoverageTableFields>>();
+                let _table = Table::new(table_fields)
+                    .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
+                    .with(Style::modern());
+                println!("{}", _table);
+                Ok(())
+            }
+            false => {
+                if header {
+                    println!("sequence\tregions\treads\talignments\tbases\tlength\tcoverage\tdescription\ttags")
+                }
+                match file {
+                    Some(file) => {
+                        let mut file_handle = File::create(file)?;
+                        for cov_fields in coverage_fields.iter() {
+                            writeln!(
+                                file_handle,
+                                "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",
+                                cov_fields.name,
+                                cov_fields.regions,
+                                cov_fields.reads,
+                                cov_fields.alignments,
+                                cov_fields.bases,
+                                cov_fields.length,
+                                cov_fields.coverage,
+                                cov_fields.description,
+                                cov_fields.tags
+                            )?;
+                        }
+                        Ok(())
+                    }
+                    None => {
+                        for cov_fields in coverage_fields.iter() {
+                            println!(
+                                "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{}\t{}",
+                                cov_fields.name,
+                                cov_fields.regions,
+                                cov_fields.reads,
+                                cov_fields.alignments,
+                                cov_fields.bases,
+                                cov_fields.length,
+                                cov_fields.coverage,
+                                cov_fields.description,
+                                cov_fields.tags
+                            )
+                        }
+                        Ok(())
+                    }
+                }
+            }
+        }
     }
     #[cfg(not(tarpaulin_include))]
     /// Print the coverage distributions to console as a text-based coverage plot
@@ -1237,7 +1338,7 @@ mod tests {
     #[test]
     fn query_alignment_length_from_cigar_match() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
-        let cigars = vec![Cigar::Match(149)];
+        let cigars = [Cigar::Match(149)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1246,7 +1347,7 @@ mod tests {
     fn query_alignment_length_from_cigar_with_del() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
         // Deletion is not considered
-        let cigars = vec![Cigar::Match(8), Cigar::Del(1), Cigar::Match(141)];
+        let cigars = [Cigar::Match(8), Cigar::Del(1), Cigar::Match(141)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1254,7 +1355,7 @@ mod tests {
     #[test]
     fn query_alignment_length_from_cigar_with_ins() {
         // Insertion is considered
-        let cigars = vec![Cigar::Match(7), Cigar::Ins(1), Cigar::Match(141)];
+        let cigars = [Cigar::Match(7), Cigar::Ins(1), Cigar::Match(141)];
         let qalen: u32 = qalen_from_cigar(cigars.iter());
         assert_eq!(qalen, 149)
     }
@@ -1263,7 +1364,7 @@ mod tests {
     fn query_alignment_length_from_cigar_with_indel() {
         // Derived from a real example comparison between PAF and BAM of the same alignment
         // Insertion is considered, Deletion is not considered
-        let cigars = vec![
+        let cigars = [
             Cigar::Match(35),
             Cigar::Del(3),
             Cigar::Match(15),

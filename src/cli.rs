@@ -232,6 +232,12 @@ pub struct Cli {
     /// Output selected sequences with a numeric prefix sorted by descending reads or coverage (--group-select-by)
     #[structopt(short = "G", long = "group-select-order")]
     pub group_select_order: bool,
+    /// Output selected group summary data (coverage alignment data) to this file.
+    ///
+    /// Ungrouped summary is output to stdout. This is specifically to allow for combining
+    /// scanning and remapping steps in the Cerebro pipeline.
+    #[structopt(short = "D", long = "group-select-data")]
+    pub group_select_data: Option<PathBuf>,
     /// Segment field identifier (e.g. "segment=")
     ///
     /// Use this value to identify segment fields in the referennce headers of grouped
@@ -250,6 +256,13 @@ pub struct Cli {
     /// grroups in which all alignments are negative.
     #[structopt(long)]
     pub segment_field_nan: Option<String>,
+    /// Output zero-statistics reference alignments
+    ///
+    /// This option can be used to include reference sequences with and without alignments. Only
+    /// for ungrouped alignments. Requires --fasta or will throw error. If filters are activated,
+    /// this option will include all filtered sequences except statistics are now SET TO ZERO.
+    #[structopt(short = "z", long = "zero")]
+    pub zero: bool,
 }
 
 fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
@@ -267,7 +280,7 @@ fn check_file_exists(file: &OsStr) -> Result<PathBuf, OsString> {
 /// are specified (-vv) the highest value is returned
 fn parse_verbosity(v: u64) -> u64 {
     match v {
-        0 | 1 | 2 => v,
+        0..=2 => v,
         _ => 2,
     }
 }
