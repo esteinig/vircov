@@ -75,7 +75,7 @@ vircov --alignment test.bam \
    --fasta ref.fa \
    --min-len 50 \                  # minimum query alignment length
    --min-cov 0 \                   # minimum query alignment coverage
-   --min-mapq 50 \                 # minimum query alignment coverage
+   --min-mapq 50 \                 # minimum mapping quality
    --reads 3 \                     # minimum reads aligned against a reference
    --coverage 0.05 \               # minimum reference coverage fraction
    --regions 4 \                   # minimum distinct alignment regions
@@ -93,7 +93,7 @@ vircov --alignment test.paf  \
    --fasta ref.fa \
    --min-len 50 \                      # minimum query alignment length
    --min-cov 0 \                       # minimum query alignment coverage
-   --min-mapq 50 \                     # minimum query alignment coverage
+   --min-mapq 50 \                     # minimum mapping quality
    --reads 3 \                         # minimum reads aligned against a reference
    --coverage 0.05 \                   # minimum reference coverage fraction
    --regions 4 \                       # minimum distinct alignment regions
