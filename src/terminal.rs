@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use clap::{Args, Parser, Subcommand, ArgAction};
 use clap::builder::TypedValueParser;
+use clap::{ArgAction, Args, Parser, Subcommand};
+use std::path::PathBuf;
 
 /// Vircov: metagenomic diagnostics for viral genomes
 #[derive(Debug, Parser)]
@@ -21,7 +21,6 @@ pub enum Commands {
     Subtype(SubtypeArgs),
 }
 
-
 #[derive(Debug, Args)]
 pub struct SubtypeArgs {
     /// Consensus assemblies for subtyping
@@ -31,14 +30,12 @@ pub struct SubtypeArgs {
     #[clap(long, short = 'd')]
     pub database: PathBuf,
     /// Output directory
-    #[clap(long, short = 'd', default_value=".")]
+    #[clap(long, short = 'd', default_value = ".")]
     pub outdir: PathBuf,
     /// Threads for Diamond and BLAST
-    #[clap(long, short = 't', default_value="2")]
+    #[clap(long, short = 't', default_value = "2")]
     pub threads: u32,
 }
-
-
 
 #[derive(Debug, Args)]
 pub struct CoverageArgs {
@@ -257,7 +254,7 @@ pub struct CoverageArgs {
     pub group_select_split: Option<PathBuf>,
     /// Select a representative genome from the groups by reads or coverage
     #[clap(
-        short = 'B', 
+        short = 'B',
         long = "group-select-by",
         value_name = "coverage",
         value_parser=clap::builder::PossibleValuesParser::new(["reads", "coverage"]),
@@ -301,24 +298,24 @@ pub struct CoverageArgs {
     pub zero: bool,
 }
 
-
-
 pub fn get_styles() -> clap::builder::Styles {
-	clap::builder::Styles::styled()
-		.header(
-			anstyle::Style::new()
-				.bold()
-				.underline()
-				.fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Yellow))),
-		)
-		.literal(
-			anstyle::Style::new()
-				.bold()
-				.fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Green))),
-		)
+    clap::builder::Styles::styled()
+        .header(
+            anstyle::Style::new()
+                .bold()
+                .underline()
+                .fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Yellow))),
+        )
+        .literal(
+            anstyle::Style::new()
+                .bold()
+                .fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Green))),
+        )
 }
 
 fn validate_file_path(path: &PathBuf) -> Result<(), String> {
-    if !path.exists() { return Err(format!("File path does not exist: {}", path.display())) }
+    if !path.exists() {
+        return Err(format!("File path does not exist: {}", path.display()));
+    }
     Ok(())
 }

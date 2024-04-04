@@ -1,16 +1,15 @@
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::PathBuf;
 use tabled::{Table, Tabled};
 use thiserror::Error;
-use std::collections::{HashMap, HashSet};
 
-use std::process::{Command, Stdio};
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 
 use tar::Archive;
-
 
 /*
 ========================
@@ -19,8 +18,7 @@ Custom error definitions
 */
 
 #[derive(Error, Debug)]
-pub enum SubtypeError {
-}
+pub enum SubtypeError {}
 
 /*
 ====================
@@ -32,14 +30,12 @@ fn display_coverage(cov: &f64) -> String {
     format!("{:.1}%", cov)
 }
 
-
 fn display_optional_coverage(cov: &Option<f64>) -> String {
     match cov {
         Some(cov) => format!("{:.1}%", cov),
-        None => String::from("n/a")
+        None => String::from("n/a"),
     }
 }
-
 
 /*
 ================
@@ -47,15 +43,13 @@ Subtype Database
 ================
 */
 
-
 pub struct SubtypeDatabaseFiles {
     csv: PathBuf,
     fasta_aa: PathBuf,
     fasta_nuc: PathBuf,
     db_blastn: PathBuf,
-    db_blastx: PathBuf
+    db_blastx: PathBuf,
 }
-
 
 #[derive(Error, Debug)]
 pub enum SubtypeDatabaseError {
@@ -87,21 +81,21 @@ pub enum SubtypeDatabaseError {
 
 pub struct AlignmentConfig {
     blast: BlastConfig,
-    diamond: DiamondConfig
+    diamond: DiamondConfig,
 }
 
 impl Default for AlignmentConfig {
     fn default() -> Self {
         Self {
             blast: BlastConfig::default(),
-            diamond: DiamondConfig::default()
+            diamond: DiamondConfig::default(),
         }
     }
 }
 
 pub struct BlastConfig {
     min_percent_identity: f64,
-    max_target_seqs: u64
+    max_target_seqs: u64,
 }
 impl Default for BlastConfig {
     fn default() -> Self {
@@ -115,7 +109,7 @@ pub struct DiamondConfig {
     max_evalue: f64,
     max_target_seqs: u64,
     min_query_cover: f64,
-    min_target_cover: f64
+    min_target_cover: f64,
 }
 impl Default for DiamondConfig {
     fn default() -> Self {
@@ -123,21 +117,22 @@ impl Default for DiamondConfig {
             max_evalue: 0.00001,
             max_target_seqs: 10000,
             min_query_cover: 50.,
-            min_target_cover: 50.
+            min_target_cover: 50.,
         }
     }
 }
 
-
 pub struct SubtypeDatabase {
     pub name: String,
     pub path: PathBuf,
-    pub files: SubtypeDatabaseFiles
+    pub files: SubtypeDatabaseFiles,
 }
 
 impl SubtypeDatabase {
-    pub fn from(archive: &PathBuf, outdir: &PathBuf, threads: u32) -> Result<Self, SubtypeDatabaseError>  {
-
+    pub fn from(
+        archive: &PathBuf,
+        outdir: &PathBuf
+    ) -> Result<Self, SubtypeDatabaseError> {
         create_dir_all(&outdir)?;
 
         // Decompress database archive into subtype database output directory
@@ -148,15 +143,19 @@ impl SubtypeDatabase {
         let db_csv = outdir.join("db").join("db.csv");
 
         if !db_nuc.exists() {
-            return Err(SubtypeDatabaseError::DatabaseFileMissing(db_nuc.display().to_string()))
+            return Err(SubtypeDatabaseError::DatabaseFileMissing(
+                db_nuc.display().to_string(),
+            ));
         }
         if !db_aa.exists() {
-            return Err(SubtypeDatabaseError::DatabaseFileMissing(db_aa.display().to_string()))
+            return Err(SubtypeDatabaseError::DatabaseFileMissing(
+                db_aa.display().to_string(),
+            ));
         }
         // if !db_csv.exists() {
         //     return Err(SubtypeDatabaseError::DatabaseFileMissing(db_csv.display().to_string()))
         // }
-        
+
         let name = get_base_file_name(&archive)?;
 
         let db_blastx = outdir.join("blastx");
@@ -164,90 +163,72 @@ impl SubtypeDatabase {
 
         SubtypeDatabase::makedb_blast_nuc(&db_nuc, &db_blastn)?;
         SubtypeDatabase::makedb_blast_prot(&db_aa, &db_blastx)?;
-        
-        // SubtypeDatabase::makedb_diamond(&db_aa, &db_dmd, threads)?;
 
-        Ok(Self { 
+        Ok(Self {
             name,
             path: outdir.to_path_buf(),
-            files: SubtypeDatabaseFiles { 
-                csv: db_csv, 
-                fasta_aa: db_aa, 
+            files: SubtypeDatabaseFiles {
+                csv: db_csv,
+                fasta_aa: db_aa,
                 fasta_nuc: db_nuc,
                 db_blastn,
-                db_blastx
-            }
+                db_blastx,
+            },
         })
     }
-    pub fn subtype(&self, fasta: &PathBuf, outdir: &PathBuf, alignment_config: Option<AlignmentConfig>, threads: u32) -> Result<(), SubtypeDatabaseError> {
-
+    pub fn subtype(
+        &self,
+        fasta: &PathBuf,
+        outdir: &PathBuf,
+        alignment_config: Option<AlignmentConfig>,
+        threads: u32,
+    ) -> Result<(), SubtypeDatabaseError> {
         let config = alignment_config.unwrap_or(AlignmentConfig::default());
         let input_name = get_base_file_name(&fasta)?;
 
-        let blastn_output = outdir.join(
-            format!("{}.{}.blastn.tsv", input_name, self.name)
-        );
-        let blastx_output = outdir.join(
-            format!("{}.{}.blastx.tsv", input_name, self.name)
-        );
+        let blastn_output = outdir.join(format!("{}.{}.blastn.tsv", input_name, self.name));
+        let blastx_output = outdir.join(format!("{}.{}.blastx.tsv", input_name, self.name));
 
         log::info!("Computing nucleotide and protein alignments with BLAST...");
 
         self.run_blastn(
-            fasta, 
-            &self.files.db_blastn, 
-            &blastn_output, 
-            config.blast.min_percent_identity, 
-            config.blast.max_target_seqs, 
-            threads
+            fasta,
+            &self.files.db_blastn,
+            &blastn_output,
+            config.blast.min_percent_identity,
+            config.blast.max_target_seqs,
+            threads,
         )?;
-        // self.run_blast(
-        //     fasta, 
-        //     &self.files.db_blastx, 
-        //     &blastx_output, 
-        //     config.blast.min_percent_identity, 
-        //     config.blast.max_target_seqs, 
-        //     threads,
-        //     true
-        // )?;
 
         self.run_blastx(
-            fasta, 
-            &self.files.db_blastx, 
-            &blastx_output, 
-            config.diamond.max_evalue, 
-            config.diamond.max_target_seqs, 
-            threads
+            fasta,
+            &self.files.db_blastx,
+            &blastx_output,
+            config.diamond.max_evalue,
+            config.diamond.max_target_seqs,
+            threads,
         )?;
 
-        // log::info!("Computing amino acid alignments with Diamond...");
 
-        // self.run_diamond(
-        //     fasta, 
-        //     &self.files.db_dmd, 
-        //     &diamond_output, 
-        //     config.diamond.max_evalue, 
-        //     config.diamond.max_target_seqs, 
-        //     config.diamond.min_query_cover, 
-        //     config.diamond.min_target_cover, 
-        //     threads
-        // )?;
-
-        log::info!("Computing average nucleotide identity and coverage from alignments with BLAST...");
+        log::info!(
+            "Computing average nucleotide identity and coverage from alignments with BLAST..."
+        );
         self.compute_blastn_ani_cov(&blastn_output)?;
 
-        log::info!("Computing average amino acid identity and coverage from alignments with BLAST...");
+        log::info!(
+            "Computing average amino acid identity and coverage from alignments with BLAST..."
+        );
         self.compute_blastx_aai_cov(&blastx_output)?;
-
-        // self.compute_diamond_aai_cov(&diamond_output)?;
-
 
         Ok(())
     }
 
     // ANI
 
-    pub fn compute_blastn_ani_cov(&self, blastn_results: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+    pub fn compute_blastn_ani_cov(
+        &self,
+        blastn_results: &PathBuf,
+    ) -> Result<(), SubtypeDatabaseError> {
         let file = File::open(blastn_results)?;
         let reader = BufReader::new(file);
 
@@ -285,24 +266,33 @@ impl SubtypeDatabase {
 
     // AAI
 
-    pub fn compute_blastx_aai_cov(&self, blastx_results: &PathBuf) -> Result<(), SubtypeDatabaseError> {
-
+    pub fn compute_blastx_aai_cov(
+        &self,
+        blastx_results: &PathBuf,
+    ) -> Result<(), SubtypeDatabaseError> {
         let genome_info = parse_aa_fasta(&self.files.fasta_aa)?;
         let genome_alns = parse_and_organize_alignments(blastx_results, &genome_info)?;
         let mut summaries = compute_summaries(&genome_info, &genome_alns);
 
-        summaries.sort_by(|a, b| b.aai.partial_cmp(&a.aai).expect("Should not be an optional field") );
+        summaries.sort_by(|a, b| {
+            b.aai
+                .partial_cmp(&a.aai)
+                .expect("Should not be an optional field")
+        });
 
         let table = Table::new(summaries);
 
-        println!("{}",  &table);
+        println!("{}", &table);
 
         Ok(())
     }
 
     // Helper methods
 
-    pub fn makedb_blast_nuc(db_fasta: &PathBuf, output: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+    pub fn makedb_blast_nuc(
+        db_fasta: &PathBuf,
+        output: &PathBuf,
+    ) -> Result<(), SubtypeDatabaseError> {
         let args = vec![
             "-in".to_string(),
             db_fasta.display().to_string(),
@@ -315,7 +305,10 @@ impl SubtypeDatabase {
         run_command(args, "makeblastdb")
     }
 
-    pub fn makedb_blast_prot(db_fasta: &PathBuf, output: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+    pub fn makedb_blast_prot(
+        db_fasta: &PathBuf,
+        output: &PathBuf,
+    ) -> Result<(), SubtypeDatabaseError> {
         let args = vec![
             "-in".to_string(),
             db_fasta.display().to_string(),
@@ -327,7 +320,7 @@ impl SubtypeDatabase {
         log::info!("Running command: makeblastdb {}", &args.join(" "));
         run_command(args, "makeblastdb")
     }
-    
+
     pub fn run_blastn(
         &self,
         input: &PathBuf,
@@ -335,7 +328,7 @@ impl SubtypeDatabase {
         output: &PathBuf,
         min_percent_identity: f64,
         max_target_seqs: u64,
-        threads: u32
+        threads: u32,
     ) -> Result<(), SubtypeDatabaseError> {
         let mut args = vec![
             "-query".to_string(),
@@ -351,7 +344,7 @@ impl SubtypeDatabase {
             "-num_threads".to_string(),
             threads.to_string(),
             "-perc_identity".to_string(),
-            min_percent_identity.to_string()
+            min_percent_identity.to_string(),
         ];
 
         log::info!("Running command: blastn with args {}", &args.join(" "));
@@ -375,7 +368,8 @@ impl SubtypeDatabase {
             "-out".to_string(),
             output.display().to_string(),
             "-outfmt".to_string(),
-            "6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore".to_string(),
+            "6 qseqid sseqid pident length qlen slen qstart qend sstart send evalue bitscore"
+                .to_string(),
             "-evalue".to_string(),
             max_evalue.to_string(),
             "-max_target_seqs".to_string(),
@@ -420,9 +414,8 @@ struct AlignmentSummary {
     aai: f64,
     #[header("AAIw")]
     #[field(display_with = "display_coverage")]
-    weighted_aai: f64
+    weighted_aai: f64,
 }
-
 
 #[derive(Debug)]
 struct Alignment {
@@ -442,7 +435,50 @@ struct Alignment {
     scov: f64,
 }
 
-fn parse_blastx_output(file_path: &PathBuf, min_qcov: f64, min_tcov: f64) -> Result<Vec<Alignment>, SubtypeDatabaseError> {
+/// Parses a BLASTX output file to extract alignments meeting specific coverage criteria.
+///
+/// This function reads a BLASTX output file and filters alignments based on minimum query
+/// and target coverage percentages. Each line in the BLASTX output is expected to be a 
+/// tab-delimited alignment record. Records not meeting the specified coverage thresholds 
+/// or lacking sufficient data fields are excluded.
+///
+/// # Arguments
+///
+/// * `file_path` - A `&PathBuf` reference to the BLASTX output file.
+/// * `min_qcov` - The minimum query coverage percentage required for an alignment to be included.
+/// * `min_tcov` - The minimum target coverage percentage required for an alignment to be included.
+///
+/// # Returns
+///
+/// A `Result<Vec<Alignment>, SubtypeDatabaseError>`, where `Vec<Alignment>` contains the 
+/// alignments meeting the specified coverage criteria, or `SubtypeDatabaseError` on failure.
+///
+/// # Errors
+///
+/// Returns `SubtypeDatabaseError::IOError` if the file cannot be opened or read.
+/// Returns `SubtypeDatabaseError::ParseFloat` or `SubtypeDatabaseError::ParseInteger` 
+/// if parsing of numeric fields fails.
+///
+/// # Example
+///
+/// ```
+/// use std::path::PathBuf;
+/// use vircov::{parse_blastx_output, Alignment, SubtypeDatabaseError};
+///
+/// let file_path = PathBuf::from("blastx_output.txt");
+/// let min_qcov = 70.0;
+/// let min_tcov = 70.0;
+///
+/// match parse_blastx_output(&file_path, min_qcov, min_tcov) {
+///     Ok(alignments) => println!("Alignments found: {}", alignments.len()),
+///     Err(error) => eprintln!("Failed to parse BLASTX output: {:?}", error),
+/// }
+/// ```
+fn parse_blastx_output(
+    file_path: &PathBuf,
+    min_qcov: f64,
+    min_tcov: f64,
+) -> Result<Vec<Alignment>, SubtypeDatabaseError> {
     let file = File::open(file_path).map_err(SubtypeDatabaseError::IOError)?;
     let reader = BufReader::new(file);
     let mut alignments: Vec<Alignment> = Vec::new();
@@ -458,22 +494,42 @@ fn parse_blastx_output(file_path: &PathBuf, min_qcov: f64, min_tcov: f64) -> Res
             qseqid: parts[0].to_string(),
             sseqid: parts[1].to_string(),
             pident: parts[2].parse().map_err(SubtypeDatabaseError::ParseFloat)?,
-            _length: parts[3].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            qlen: parts[4].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            slen: parts[5].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            qstart: parts[6].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            qend: parts[7].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            sstart: parts[8].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            send: parts[9].parse().map_err(SubtypeDatabaseError::ParseInteger)?,
-            _evalue: parts[10].parse().map_err(SubtypeDatabaseError::ParseFloat)?,
-            _bitscore: parts[11].parse().map_err(SubtypeDatabaseError::ParseFloat)?,
+            _length: parts[3]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            qlen: parts[4]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            slen: parts[5]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            qstart: parts[6]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            qend: parts[7]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            sstart: parts[8]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            send: parts[9]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseInteger)?,
+            _evalue: parts[10]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseFloat)?,
+            _bitscore: parts[11]
+                .parse()
+                .map_err(SubtypeDatabaseError::ParseFloat)?,
             qcov: 0.0, // To be calculated
             scov: 0.0, // To be calculated
         };
 
         // Calculate coverages
-        alignment.qcov = (alignment.qend - alignment.qstart + 1) as f64 / alignment.qlen as f64 * 100.0;
-        alignment.scov = (alignment.send - alignment.sstart + 1) as f64 / alignment.slen as f64 * 100.0;
+        alignment.qcov =
+            (alignment.qend - alignment.qstart + 1) as f64 / alignment.qlen as f64 * 100.0;
+        alignment.scov =
+            (alignment.send - alignment.sstart + 1) as f64 / alignment.slen as f64 * 100.0;
 
         if alignment.qcov >= min_qcov && alignment.scov >= min_tcov {
             alignments.push(alignment);
@@ -483,7 +539,38 @@ fn parse_blastx_output(file_path: &PathBuf, min_qcov: f64, min_tcov: f64) -> Res
     Ok(alignments)
 }
 
-
+/// Parses a FASTA file of amino acid sequences to extract protein-to-genome mappings and count the number of proteins per genome.
+///
+/// This function reads a FASTA file where each entry's header starts with '>' followed by the protein ID,
+/// which is expected to contain the genome ID as a prefix, separated from the protein-specific part by "__".
+/// It collects information about which proteins belong to which genome and counts the total number of proteins per genome.
+///
+/// # Arguments
+///
+/// * `file_path` - A `&PathBuf` reference to the FASTA file containing the amino acid sequences.
+///
+/// # Returns
+///
+/// A `Result<GenomeInfo, SubtypeDatabaseError>`, where `GenomeInfo` is a struct containing two fields:
+/// `protein_to_genome`, a mapping from protein IDs to genome IDs, and `num_proteins`, a count of proteins per genome.
+/// Returns `SubtypeDatabaseError::IOError` on file reading errors.
+///
+/// # Example
+///
+/// ```
+/// use std::path::PathBuf;
+/// use vircov::{parse_aa_fasta, GenomeInfo, SubtypeDatabaseError};
+///
+/// let file_path = PathBuf::from("path/to/your/aa_sequences.fasta");
+///
+/// match parse_aa_fasta(&file_path) {
+///     Ok(info) => {
+///         println!("Number of proteins per genome: {:?}", info.num_proteins);
+///         println!("Protein to genome mapping: {:?}", info.protein_to_genome);
+///     },
+///     Err(error) => eprintln!("Error parsing FASTA file: {:?}", error),
+/// }
+/// ```
 fn parse_aa_fasta(file_path: &PathBuf) -> Result<GenomeInfo, SubtypeDatabaseError> {
     let file = match File::open(file_path) {
         Ok(file) => file,
@@ -501,7 +588,7 @@ fn parse_aa_fasta(file_path: &PathBuf) -> Result<GenomeInfo, SubtypeDatabaseErro
         if line.starts_with('>') {
             let protein_id = line.trim_start_matches('>').to_owned();
             let ids: Vec<&str> = protein_id.split("__").collect();
-            
+
             let genome_id = ids[0].to_string();
 
             *info.num_proteins.entry(genome_id.clone()).or_insert(0) += 1;
@@ -513,21 +600,64 @@ fn parse_aa_fasta(file_path: &PathBuf) -> Result<GenomeInfo, SubtypeDatabaseErro
     Ok(info)
 }
 
+/// Parses BLASTX output and organizes alignments by genome and target protein.
+///
+/// This function first parses the BLASTX output file to extract alignments, then organizes these alignments
+/// into a nested `HashMap` structure. The top-level `HashMap` keys are genome IDs from the query sequences. 
+/// Each genome ID maps to another `HashMap`, where the keys are target genome IDs derived from the protein IDs
+/// in the `GenomeInfo` mapping, and the values are vectors of `Alignment` objects representing the alignments
+/// of the query genome to proteins of the target genome.
+///
+/// # Arguments
+///
+/// * `file_path` - A reference to a `PathBuf` specifying the path to the BLASTX output file.
+/// * `info` - A reference to a `GenomeInfo` struct containing mappings from protein IDs to genome IDs, used to organize the alignments.
+///
+/// # Returns
+///
+/// A `Result<HashMap<String, HashMap<String, Vec<Alignment>>>, SubtypeDatabaseError>`, where the outer `HashMap` maps
+/// genome IDs to another `HashMap` that maps target genome IDs to vectors of `Alignment` objects. Returns `SubtypeDatabaseError`
+/// in case of parsing failures or if the target protein is not found in the `GenomeInfo`.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::path::PathBuf;
+/// use vircov::{parse_and_organize_alignments, GenomeInfo, SubtypeDatabaseError, Alignment};
+///
+/// let file_path = PathBuf::from("path/to/blastx/output.txt");
+/// let info = GenomeInfo {
+///     // Assuming these fields are populated accordingly
+///     protein_to_genome: HashMap::new(),
+///     num_proteins: HashMap::new(),
+/// };
+///
+/// match parse_and_organize_alignments(&file_path, &info) {
+///     Ok(genome_alns) => println!("Organized alignments: {:?}", genome_alns),
+///     Err(error) => eprintln!("Failed to parse and organize alignments: {:?}", error),
+/// }
+/// ```
 fn parse_and_organize_alignments(
-    file_path: &PathBuf, 
-    info: &GenomeInfo
+    file_path: &PathBuf,
+    info: &GenomeInfo,
 ) -> Result<HashMap<String, HashMap<String, Vec<Alignment>>>, SubtypeDatabaseError> {
-
     let mut genome_alns: HashMap<String, HashMap<String, Vec<Alignment>>> = HashMap::new();
     let alignments = parse_blastx_output(file_path, 0., 0.)?;
 
     for aln in alignments {
-
         let genome = aln.qseqid.clone();
         let protein = aln.sseqid.clone();
 
-        let target = info.protein_to_genome.get(&protein).ok_or(SubtypeDatabaseError::ParseValue(format!("Target protein not found: {}", &protein)))?.to_string();
-        genome_alns.entry(genome)
+        let target = info
+            .protein_to_genome
+            .get(&protein)
+            .ok_or(SubtypeDatabaseError::ParseValue(format!(
+                "Target protein not found: {}",
+                &protein
+            )))?
+            .to_string();
+        genome_alns
+            .entry(genome)
             .or_insert_with(HashMap::new)
             .entry(target)
             .or_insert_with(Vec::new)
@@ -537,6 +667,43 @@ fn parse_and_organize_alignments(
     Ok(genome_alns)
 }
 
+/// Computes summary statistics for genome alignments against target genomes.
+///
+/// This function aggregates alignment data to compute summary statistics for each query genome
+/// against each target genome. Summary statistics include the total number of proteins in the target,
+/// the number of shared proteins (based on gene IDs), the percentage of shared proteins relative to the
+/// total target proteins (protein target coverage), average amino acid identity (AAI), and weighted AAI,
+/// which factors in both the protein target coverage and the amino acid target coverage.
+///
+/// # Arguments
+///
+/// * `genome_info` - A reference to a `GenomeInfo` struct containing mappings of proteins to genomes
+///   and the number of proteins per genome.
+/// * `genome_alns` - A reference to a nested `HashMap` where the outer key is the query genome ID,
+///   the inner key is the target genome ID, and the value is a vector of `Alignment` objects
+///   representing the alignments between the query genome and proteins of the target genome.
+///
+/// # Returns
+///
+/// Returns a `Vec<AlignmentSummary>`, where each `AlignmentSummary` contains summary statistics for
+/// a query genome aligned against a target genome.
+///
+/// # Example
+///
+/// ```no_run
+/// use std::collections::HashMap;
+/// use vircov::{compute_summaries, GenomeInfo, Alignment, AlignmentSummary};
+///
+/// let genome_info = GenomeInfo {
+///     // Assuming these fields are populated accordingly
+///     protein_to_genome: HashMap::new(),
+///     num_proteins: HashMap::new(),
+/// };
+///
+/// let genome_alns: HashMap<String, HashMap<String, Vec<Alignment>>> = HashMap::new(); // Assuming populated
+///
+/// let summaries = compute_summaries(&genome_info, &genome_alns);
+/// ```
 fn compute_summaries(
     genome_info: &GenomeInfo,
     genome_alns: &HashMap<String, HashMap<String, Vec<Alignment>>>,
@@ -544,9 +711,7 @@ fn compute_summaries(
     let mut summaries = Vec::new();
 
     for (query, targets) in genome_alns {
-
         for (target, alignments) in targets {
-
             let total_target_proteins = *genome_info.num_proteins.get(target).unwrap_or(&0);
 
             let mut aln_by_gene = HashMap::new();
@@ -554,10 +719,10 @@ fn compute_summaries(
                 let ids: Vec<&str> = alignment.sseqid.split("__").collect();
                 let gene_id = ids[1];
 
-                aln_by_gene.entry(gene_id)
-                .or_insert_with(Vec::new)
-                .push(alignment);
-
+                aln_by_gene
+                    .entry(gene_id)
+                    .or_insert_with(Vec::new)
+                    .push(alignment);
             }
 
             let mut shared_proteins = HashSet::new();
@@ -570,7 +735,8 @@ fn compute_summaries(
             let protein_tcov = 100.0 * shared_proteins as f64 / total_target_proteins as f64;
             let (_, aa_tcov) = compute_coverage(alignments);
 
-            let aai = alignments.iter().map(|aln| aln.pident).sum::<f64>() / alignments.len() as f64;
+            let aai =
+                alignments.iter().map(|aln| aln.pident).sum::<f64>() / alignments.len() as f64;
 
             summaries.push(AlignmentSummary {
                 query: query.clone(),
@@ -581,7 +747,7 @@ fn compute_summaries(
                 protein_tcov,
                 aa_tcov,
                 aai,
-                weighted_aai: aai*(protein_tcov/100.)*(aa_tcov/100.)
+                weighted_aai: aai * (protein_tcov / 100.) * (aa_tcov / 100.),
             });
         }
     }
@@ -589,7 +755,28 @@ fn compute_summaries(
     summaries
 }
 
-
+/// Merges overlapping or consecutive intervals for single target.
+///
+/// Given a vector of intervals `(usize, usize)`, where each tuple represents a start and end, this function merges
+/// all overlapping or consecutive intervals into the smallest number of non-overlapping intervals.
+///
+/// # Arguments
+///
+/// * `intervals` - A vector of tuples where each tuple contains the start and end of an interval.
+///
+/// # Returns
+///
+/// Returns a vector of tuples representing the merged intervals.
+///
+/// # Example
+///
+/// ```
+/// use vircov::merge_intervals_single_target;
+///
+/// let intervals = vec![(1, 3), (2, 4), (5, 7), (6, 8)];
+/// let merged_intervals = merge_intervals_single_target(intervals);
+/// assert_eq!(merged_intervals, vec![(1, 4), (5, 8)]);
+/// ```
 fn merge_intervals_single_target(intervals: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     if intervals.is_empty() {
         return vec![];
@@ -610,9 +797,40 @@ fn merge_intervals_single_target(intervals: Vec<(usize, usize)>) -> Vec<(usize, 
     merged
 }
 
+/// Computes the query and subject coverage for a set of alignments to a single target.
+///
+/// This function calculates the total coverage of query and subject sequences by merging overlapping
+/// or consecutive alignments and then calculating the coverage as a percentage of the total sequence lengths.
+///
+/// # Arguments
+///
+/// * `alignments` - A vector of references to `Alignment` objects representing alignments between a query
+///   and a target sequence.
+///
+/// # Returns
+///
+/// Returns a tuple containing the query coverage (`qcov`) and subject coverage (`scov`) as percentages.
+///
+/// # Example
+///
+/// ```no_run
+/// use vircov::{compute_coverage_single_target, Alignment};
+///
+/// // Assuming alignments is a Vec<&Alignment> populated with relevant data
+/// let alignments: Vec<&Alignment> = vec![]; // Example placeholder
+///
+/// let (qcov, scov) = compute_coverage_single_target(alignments);
+/// println!("Query coverage: {:.2}%, Subject coverage: {:.2}%", qcov, scov);
+/// ```
 fn compute_coverage_single_target(alignments: Vec<&Alignment>) -> (f64, f64) {
-    let q_intervals: Vec<(usize, usize)> = alignments.iter().map(|aln| (aln.qstart, aln.qend)).collect();
-    let s_intervals: Vec<(usize, usize)> = alignments.iter().map(|aln| (aln.sstart, aln.send)).collect();
+    let q_intervals: Vec<(usize, usize)> = alignments
+        .iter()
+        .map(|aln| (aln.qstart, aln.qend))
+        .collect();
+    let s_intervals: Vec<(usize, usize)> = alignments
+        .iter()
+        .map(|aln| (aln.sstart, aln.send))
+        .collect();
 
     let q_merged = merge_intervals_single_target(q_intervals);
     let s_merged = merge_intervals_single_target(s_intervals);
@@ -629,6 +847,30 @@ fn compute_coverage_single_target(alignments: Vec<&Alignment>) -> (f64, f64) {
     (qcov, scov)
 }
 
+/// Merges overlapping or consecutive intervals into the smallest number of non-overlapping intervals.
+///
+/// This function sorts the intervals by their start positions and then merges any intervals
+/// that overlap or are consecutive into a single interval. This is useful for simplifying
+/// the representation of ranges, such as genomic alignments or time intervals.
+///
+/// # Arguments
+///
+/// * `intervals` - A mutable vector of tuples `(usize, usize)` representing the intervals to be merged,
+///   where the first element of each tuple is the start and the second is the end.
+///
+/// # Returns
+///
+/// Returns a vector of tuples representing the merged intervals.
+///
+/// # Example
+///
+/// ```
+/// use vircov::merge_intervals;
+///
+/// let intervals = vec![(1, 3), (2, 4), (6, 8), (7, 10)];
+/// let merged_intervals = merge_intervals(intervals);
+/// assert_eq!(merged_intervals, vec![(1, 4), (6, 10)]);
+/// ```
 fn merge_intervals(mut intervals: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     if intervals.is_empty() {
         return vec![];
@@ -648,16 +890,44 @@ fn merge_intervals(mut intervals: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
     merged
 }
 
+/// Computes the coverage of query and subject sequences from a set of alignments.
+///
+/// This function calculates the coverage for query and subject sequences based on their alignments.
+/// Coverage is computed by first organizing the start and end positions of alignments by sequence ID,
+/// then merging overlapping or consecutive intervals to calculate the total coverage. Coverage is
+/// expressed as a percentage of the total length of all query or subject sequences.
+///
+/// # Arguments
+///
+/// * `alignments` - A slice of `Alignment` structs representing the alignments from which to compute coverage.
+///
+/// # Returns
+///
+/// Returns a tuple containing the query coverage (qcov) and subject coverage (scov) as percentages.
+///
+/// # Example
+///
+/// ```
+/// use vircov::{compute_coverage, Alignment};
+///
+/// // Assuming alignments is an array or Vec<Alignment> populated with relevant data
+/// let alignments: Vec<Alignment> = vec![]; // Example placeholder
+///
+/// let (qcov, scov) = compute_coverage(&alignments);
+/// println!("Query coverage: {:.2}%, Subject coverage: {:.2}%", qcov, scov);
+/// ```
 fn compute_coverage(alignments: &[Alignment]) -> (f64, f64) {
     let mut q_intervals_by_seqid: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
     let mut s_intervals_by_seqid: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
 
     // Organize intervals by qseqid and sseqid
     for aln in alignments {
-        q_intervals_by_seqid.entry(aln.qseqid.clone())
+        q_intervals_by_seqid
+            .entry(aln.qseqid.clone())
             .or_default()
             .push((aln.qstart, aln.qend));
-        s_intervals_by_seqid.entry(aln.sseqid.clone())
+        s_intervals_by_seqid
+            .entry(aln.sseqid.clone())
             .or_default()
             .push((aln.sstart, aln.send));
     }
@@ -668,12 +938,18 @@ fn compute_coverage(alignments: &[Alignment]) -> (f64, f64) {
 
     for (_, intervals) in q_intervals_by_seqid {
         let merged = merge_intervals(intervals);
-        total_q_coverage += merged.iter().map(|(start, end)| end - start + 1).sum::<usize>();
+        total_q_coverage += merged
+            .iter()
+            .map(|(start, end)| end - start + 1)
+            .sum::<usize>();
     }
 
     for (_, intervals) in s_intervals_by_seqid {
         let merged = merge_intervals(intervals);
-        total_s_coverage += merged.iter().map(|(start, end)| end - start + 1).sum::<usize>();
+        total_s_coverage += merged
+            .iter()
+            .map(|(start, end)| end - start + 1)
+            .sum::<usize>();
     }
 
     let total_qlen: usize = alignments.iter().map(|aln| aln.qlen).sum();
@@ -684,7 +960,6 @@ fn compute_coverage(alignments: &[Alignment]) -> (f64, f64) {
 
     (qcov, scov)
 }
-
 
 #[derive(Debug)]
 struct BlastRecord {
@@ -746,13 +1021,23 @@ where
         Ok(BlastRecord {
             qname: r[0].to_string(),
             tname: r[1].to_string(),
-            pid: r[2].parse().map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
-            len: r[3].parse().map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
+            pid: r[2]
+                .parse()
+                .map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
+            len: r[3]
+                .parse()
+                .map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
             qcoords,
             tcoords,
-            qlen: r[r.len() - 2].parse().map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
-            tlen: r[r.len() - 1].parse().map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
-            evalue: r[r.len() - 4].parse().map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
+            qlen: r[r.len() - 2]
+                .parse()
+                .map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
+            tlen: r[r.len() - 1]
+                .parse()
+                .map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
+            evalue: r[r.len() - 4]
+                .parse()
+                .map_err(|_| SubtypeDatabaseError::LineParse(line.clone()))?,
         })
     })
 }
@@ -787,7 +1072,9 @@ fn collect_alignment_blocks(
         }
 
         // If we're starting a new block or still within the same block
-        if current_block.is_empty() || (current_block[0].qname == aln.qname && current_block[0].tname == aln.tname) {
+        if current_block.is_empty()
+            || (current_block[0].qname == aln.qname && current_block[0].tname == aln.tname)
+        {
             current_block.push(aln);
         } else {
             // We've encountered the start of a new block, so save the old one and start fresh
@@ -909,9 +1196,7 @@ fn compute_ani(alns: &[BlastRecord], round: bool) -> f64 {
     } else {
         (total_pid_len / total_len * 100.0) / 100.0
     }
-    
 }
-
 
 /// Calculates the query and target coverage percentages from a slice of alignments.
 ///
@@ -990,7 +1275,6 @@ fn compute_cov(alns: &[BlastRecord], round: bool) -> (f64, f64) {
     } else {
         (qcov / 100.0, tcov / 100.0)
     }
-    
 }
 
 /*
@@ -1001,7 +1285,6 @@ Helper functions
 
 // Run a command that has an output arg
 pub fn run_command(args: Vec<String>, program: &str) -> Result<(), SubtypeDatabaseError> {
-    
     let output = Command::new(program)
         .args(args)
         .output()
@@ -1009,7 +1292,9 @@ pub fn run_command(args: Vec<String>, program: &str) -> Result<(), SubtypeDataba
 
     // Ensure command ran successfully
     if !output.status.success() {
-        return Err(SubtypeDatabaseError::CommandExecutionFailed(String::from_utf8_lossy(&output.stderr).to_string()));
+        return Err(SubtypeDatabaseError::CommandExecutionFailed(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ));
     }
     Ok(())
 }
@@ -1058,7 +1343,10 @@ pub enum DecompressionError {
 ///     Ok(())
 /// }
 /// ```
-pub fn decompress_archive(archive_path: &PathBuf, output_dir: &PathBuf) -> Result<(), DecompressionError> {
+pub fn decompress_archive(
+    archive_path: &PathBuf,
+    output_dir: &PathBuf,
+) -> Result<(), DecompressionError> {
     let archive_file = File::open(archive_path)?;
     let buffered_reader = BufReader::new(archive_file);
     let (decompressor, _compression_format) = niffler::get_reader(Box::new(buffered_reader))?;
@@ -1089,10 +1377,10 @@ mod tests {
             let file = File::create(&archive_path)?;
             let writer = BufWriter::new(file);
             let compressor = niffler::get_writer(
-                Box::new(writer), 
-                niffler::Format::Gzip, 
-                niffler::compression::Level::Nine)
-            ?;
+                Box::new(writer),
+                niffler::Format::Gzip,
+                niffler::compression::Level::Nine,
+            )?;
             let mut tar = tar::Builder::new(compressor);
             let mut file = File::create(&extracted_file_path)?;
             writeln!(file, "{}", extracted_file_contents)?;
@@ -1100,14 +1388,19 @@ mod tests {
             // Ensure all data is written to the tar builder
             tar.into_inner()?;
             // Going out of scope drops the compressor and flushes the write
-            
         }
 
         decompress_archive(&archive_path, &output_dir).expect("Decompression failed");
 
-        assert!(PathBuf::from(&extracted_file_path).exists(), "The extracted file does not exist");
+        assert!(
+            PathBuf::from(&extracted_file_path).exists(),
+            "The extracted file does not exist"
+        );
         let contents = fs::read_to_string(extracted_file_path)?;
-        assert_eq!(contents, extracted_file_contents, "The contents of the extracted file do not match");
+        assert_eq!(
+            contents, extracted_file_contents,
+            "The contents of the extracted file do not match"
+        );
 
         Ok(())
     }

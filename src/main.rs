@@ -1,18 +1,18 @@
 use crate::align::{ReadAlignment, ReadAlignmentError};
+use crate::error::VircovError;
 use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
-use crate::error::VircovError;
 
-use clap::Parser;
 use anyhow::Result;
+use clap::Parser;
 use subtype::SubtypeDatabase;
 
 mod align;
-mod terminal;
 mod covplot;
-mod utils;
-mod subtype;
 mod error;
+mod subtype;
+mod terminal;
+mod utils;
 
 /// Vircov application
 ///
@@ -22,23 +22,19 @@ mod error;
 fn main() -> Result<(), VircovError> {
     use std::fs::create_dir_all;
 
-    
-
-
     init_logger();
 
     let terminal = App::parse();
 
     match &terminal.command {
-        Commands::Coverage ( args ) => {
-
+        Commands::Coverage(args) => {
             let verbose = match args.group_select_split {
                 Some(_) => 2, // for group refseq selection we need the tags
                 None => args.verbose,
             };
-        
+
             let mut align = ReadAlignment::new(&args.fasta, &args.exclude)?;
-        
+
             let align = align.read(
                 args.alignment.clone(),
                 args.min_len,
@@ -46,7 +42,7 @@ fn main() -> Result<(), VircovError> {
                 args.min_mapq,
                 args.alignment_format.clone(),
             )?;
-        
+
             let mut data = align.coverage_statistics(
                 args.regions,
                 args.seq_len,
@@ -58,13 +54,15 @@ fn main() -> Result<(), VircovError> {
                 verbose,
                 args.zero,
             )?;
-        
+
             match &args.group_by {
                 None => {
                     if args.group_select_split.is_some() {
-                        return Err(VircovError::ReadAlignment(ReadAlignmentError::GroupSelectSplitError));
+                        return Err(VircovError::ReadAlignment(
+                            ReadAlignmentError::GroupSelectSplitError,
+                        ));
                     };
-        
+
                     align.to_output(
                         &mut data,
                         None,
@@ -83,14 +81,22 @@ fn main() -> Result<(), VircovError> {
                 }
                 Some(group_field) => {
                     match align.target_sequences {
-                        None => return Err(VircovError::ReadAlignment(ReadAlignmentError::GroupSequenceError)),
+                        None => {
+                            return Err(VircovError::ReadAlignment(
+                                ReadAlignmentError::GroupSequenceError,
+                            ))
+                        }
                         Some(_) => {
                             match args.covplot {
-                                true => return Err(VircovError::ReadAlignment(ReadAlignmentError::GroupCovPlotError)),
+                                true => {
+                                    return Err(VircovError::ReadAlignment(
+                                        ReadAlignmentError::GroupCovPlotError,
+                                    ))
+                                }
                                 false => {
                                     // Make a clone of the original alignment data
                                     let ungrouped_data = Some(data.clone());
-        
+
                                     // If reference sequences have been provided, continue with grouping outputs
                                     let mut grouped_data = align.group_output(
                                         &data,
@@ -122,15 +128,13 @@ fn main() -> Result<(), VircovError> {
                     }
                 }
             };
-        
+
             match args.covplot {
                 true => align.coverage_plots(&data, args.width)?,
                 false => {}
             }
-
-        },
-        Commands::Subtype( args ) => {
-            
+        }
+        Commands::Subtype(args) => {
             /* Outline of initial basic subtyping for consensus genomes
 
             Subtyping based on best matches (nucleotide, protein) against reference database,
@@ -157,17 +161,13 @@ fn main() -> Result<(), VircovError> {
 
             */
 
-
-            let subtype_db = SubtypeDatabase::from(&args.database, &args.outdir, args.threads)?;
+            let subtype_db = SubtypeDatabase::from(&args.database, &args.outdir)?;
 
             for fasta in &args.input {
                 subtype_db.subtype(fasta, &args.outdir, None, args.threads)?;
             }
-
         }
     }
-
-    
 
     Ok(())
 }

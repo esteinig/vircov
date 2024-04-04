@@ -30,7 +30,7 @@
 //     /// be the same reference file as used for the alignment.
 //     #[structopt(
 //         short = "f",
-//         long = "fasta", 
+//         long = "fasta",
 //         parse(try_from_os_str = check_file_exists)
 //     )]
 //     pub fasta: Option<PathBuf>,
@@ -53,7 +53,7 @@
 //     /// Filters (&) alignments by a minimum mapping quality.
 //     #[structopt(short = "M", long, default_value = "0")]
 //     pub min_mapq: u8,
-//     /// Verbose output statistics  
+//     /// Verbose output statistics
 //     ///
 //     /// Single flag (-v) adds whitespace separated tags in the last column,
 //     /// corresponding to the number of inferred alignment coverage regions.
@@ -110,14 +110,14 @@
 //     /// Lines starting with "#" and empty lines are not considered.
 //     #[structopt(short, long, parse(try_from_os_str = check_file_exists))]
 //     pub exclude: Option<PathBuf>,
-//     /// Prints pretty output table  
+//     /// Prints pretty output table
 //     ///
 //     /// Output the coverage statistics as a pretty table; may still get
 //     /// mangled on short terminals, as terminal width cannot currently
 //     /// be estimated in underlying library.
 //     #[structopt(short = "T", long = "table")]
 //     pub table: bool,
-//     /// Outputs a header in the non-table output  
+//     /// Outputs a header in the non-table output
 //     ///
 //     /// Adds a machine-readable header to the standard output
 //     #[structopt(short = "H", long = "header")]
@@ -150,7 +150,7 @@
 //     ///
 //     /// Applies the regions or group-regions filter only if the sequence alignment
 //     /// has <= regions-coverage threshold reference coverage. Setting this value to
-//     /// e.g. 0.6  only applies the regions filter to alignments with at most 60%  
+//     /// e.g. 0.6  only applies the regions filter to alignments with at most 60%
 //     /// coverage against the reference sequence, thus allowing for high coverage hits
 //     /// with fewer distinct alignment regions to pass the basic filter. For example,
 //     /// a reference sequence with 100% coverage and 1 distinct alignment regions would
@@ -216,12 +216,12 @@
 //     ///
 //     /// Creates a directory with a file (.fasta) for a selected genome
 //     /// from a grouped (e.g. species / taxid) coverage assessment using
-//     /// a selection criterion as outlined in --group-select-by  
+//     /// a selection criterion as outlined in --group-select-by
 //     #[structopt(short = "R", long = "group-select-split")]
 //     pub group_select_split: Option<PathBuf>,
 //     /// Select a representative genome from the groups by reads or coverage
 //     #[structopt(
-//         short = "B", 
+//         short = "B",
 //         long = "group-select-by",
 //         value_name = "coverage",
 //         possible_values = &["reads", "coverage"],
