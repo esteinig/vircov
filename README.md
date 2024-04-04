@@ -56,19 +56,56 @@ Definitive viral diagnosis from metagenomic clinical samples can be extremely ch
 
 Positive calls in these cases can be made from coverage plots showing the distinct alignment regions and a threshold on the number of regions is chosen by the authors (> 3). However, coverage plots require visual assessment and may not be suitable for flagging potential hits in automated pipelines or summary reports. 
 
-`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call based on coverage information. We have specifically implemented grouping options by for example `taxid` in the reference fasta headers and account for segmented viruses and those split into genes in some databases like `Virosaurus`. In addition the most recent version implements single reference selection based on first grouping the reference sequences that have significant alignments by `taxid` or species name, and then selecting the reference equence with the highest number of unique mapped reads (for example). This allows for usign `Vircov` with permissive (no filter) settings to select single reference genoems for remappign and and provides sensitive coverage information. Finally with the most recent update, read identifier lists can be output as files either for all mapped unique reads in the provided alignments, or per genome (or grouped genomes if grouping is activated) passing the result filters.
+`Vircov` attempts to make visual inspection and automated flagging easier by counting the distinct (non-overlapping) coverage regions in an alignment and reports some helpful statistics to make an educated call based on coverage information. We have specifically implemented grouping options by for example `taxid` in the reference fasta headers and account for segmented viruses and those split into genes in some databases like `Virosaurus`.
 
-## Usage
+In addition the most recent version implements single reference selection based on first grouping the reference sequences that have significant alignments by `taxid` or species name, and then selecting the reference equence with the highest number of unique mapped reads (for example). This allows for using `Vircov` with permissive (no filter) settings to select single reference genoems for re-mapping and and provides sensitive coverage information. 
 
-```
+## Usage examples
 
-```
+```bash
+# Output coverage statistics from a SAM|BAM|PAF alignment
+vircov --alignment test.paf > stats.tsv
 
+# Output coverage statistics with headers of reference sequences
+# used in the alignment, including non aligned references
+vircov --alignment test.paf --fasta ref.fa --zero -v > stats.zero.tsv
 
-## Clinical examples
+# Output coverage statistics with threshold filters activated
+vircov --alignment test.bam \
+   --fasta ref.fa \
+   --min-len 50 \                  # minimum query alignment length
+   --min-cov 0 \                   # minimum query alignment coverage
+   --min-mapq 50 \                 # minimum mapping quality
+   --reads 3 \                     # minimum reads aligned against a reference
+   --coverage 0.05 \               # minimum reference coverage fraction
+   --regions 4 \                   # minimum distinct alignment regions
+   --regions-coverage 0.3 \        # distinct regions filter applies < coverage of 30%
+   --read-ids ids.txt \            # read identifiers of mapped reads of surviving alignments
+   -v > stats.tsv
 
-```
+# Group alignments by field in reference description and select best coverage reference
+# for each group - header field example: "name=virus; taxid=12345; segment=N/A". Use the
+# "segment=" field to select a single best segment if aligned against and output selected
+# segments in one sequence file (e.g. for Influenza genomes). Each selected reference
+# or selected segments are output as sequence files into "outref".
 
+vircov --alignment test.paf  \
+   --fasta ref.fa \
+   --min-len 50 \                      # minimum query alignment length
+   --min-cov 0 \                       # minimum query alignment coverage
+   --min-mapq 50 \                     # minimum mapping quality
+   --reads 3 \                         # minimum reads aligned against a reference
+   --coverage 0.05 \                   # minimum reference coverage fraction
+   --regions 4 \                       # minimum distinct alignment regions
+   --regions-coverage 0.3 \            # distinct regions filter applies < coverage of 30%
+   --group-by "taxid=" \               # field to group alignments by
+   --group-sep ";" \                   # field separator in reference description
+   --group-select-by "cov" \           # select best coverage reference sequences
+   --group-select-split outref \       # output selected references into this folder
+   --group-select-order \              # order by highest coverage, include as index in filename 
+   --segment-field "segment=" \        # group and select segmented genomes with field
+   --segment-field-nan "N/A" \         # no segment value in segment field
+   -v > stats.selected.tsv             # output selected references alignment stats
 ```
 
 ## Performance
