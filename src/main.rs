@@ -2,10 +2,14 @@ use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::error::VircovError;
 use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
+use crate::subtype::SubtypeDatabase;
+use crate::subtype::SubtypeSummary;
 
+use rayon::prelude::*;
 use anyhow::Result;
 use clap::Parser;
-use subtype::SubtypeDatabase;
+use indexmap::IndexMap;
+use std::collections::HashMap;
 
 mod align;
 mod covplot;
@@ -20,7 +24,8 @@ mod utils;
 /// by the command-line interface
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), VircovError> {
-    use std::fs::create_dir_all;
+
+
 
     init_logger();
 
@@ -135,37 +140,70 @@ fn main() -> Result<(), VircovError> {
             }
         }
         Commands::Subtype(args) => {
-            /* Outline of initial basic subtyping for consensus genomes
 
-            Subtyping based on best matches (nucleotide, protein) against reference database,
-            auto-curated with Cipher for specific panels of viruses e.g. respiratory
+            let subtype_db = SubtypeDatabase::from(&args.database, &args.workdir)?;
+            
+            
+            log::info!("Database prepared, computing identity and coverage metrics...");
+            let collected: Vec<SubtypeSummary> = args.input.clone()
+                .into_par_iter()
+                .flat_map(|fasta| {
+                    subtype_db.subtype(&fasta, args.min_cov, args.min_cov_aa, args.min_cov_prot, None, args.threads)
+                        .unwrap_or_else(|err| {
+                            log::error!("Error processing input file: {}", err);
+                            Vec::new()
+                        })
+                })
+                .collect();
+        
 
-            1. Cipher NCBI virus database construction with headers
+            subtype_db.create_ranked_tables(&args.output, &collected, &args.metric, args.ranks, true, false)?;
+            
+            if !args.keep {
+                subtype_db.remove_workdir()?;
+            };
 
-                Create a FASTA database of the desired combination of sequences from NCBI Viruses,
-                using nucleotide sequences (default) and protein sequences (appropriately renamed),
-                the create DIAMOND and BLAST reference indices for each - on the fly in Vircov or
-                in Cipher?
+        }
+        Commands::ProcessNcbi(args) => {
+            
 
-            2. Implement DIAMOND and BLAST searches against the reference indices.
+            // Messy but working in a basic way. Need better structure for the processor
+            let subtypes = HashMap::from([
+                ("rsv", IndexMap::from([
+                    ("RSV-A", Vec::from(["Subgroup A", "virus A isolate", "RSV-A", "RSVA", "/A/", "A-TX", "syncytial virus A"])),
+                    ("RSV-B", Vec::from(["Subgroup B", "virus B isolate", "RSV-B", "RSVB", "/B/", "B-TX", "B-WaDC", "syncytial virus B"]))
+                ])),
+                ("rva", IndexMap::from([
+                    ("regex", Vec::from([r"[Rr]hinovirus A([A-Za-z0-9]+)\b"])),
+                ])),
+                ("hpiv", IndexMap::from([
+                    ("HPIV-1", Vec::from(["parainfluenza virus 1", "respirovirus 1", "HPIV1", "hPIV1", "PIV1"])),
+                    ("HPIV-2", Vec::from(["parainfluenza virus 2", "respirovirus 2", "HPIV2", "orthorubulavirus 2", "hPIV2", "PIV2"])),
+                    ("HPIV-3", Vec::from(["parainfluenza virus 3", "respirovirus 3", "HPIV3", "hPIV3", "PIV3"])),
+                    ("HPIV-4", Vec::from(["parainfluenza virus 4", "respirovirus 4", "HPIV4", "orthorubulavirus 4", "hPIV4", "PIV4"]))
+                ])),
+                ("hmpv", IndexMap::from([
+                    ("HMPV-A1", Vec::from(["/A1", "type A1", "A1/"])),
+                    ("HMPV-A2", Vec::from(["/A2", "type A2", "A2/"])),
+                    ("HMPV-B1", Vec::from(["/B1", "type B1", "B1/"])),
+                    ("HMPV-B2", Vec::from(["/B2", "type B2", "B2/"])),
+                    ("HMPV-A", Vec::from(["/A", "type A", "A/"])),
+                    ("HMPV-B", Vec::from(["/B", "type B", "B/"])),
+                ])),
+                ("hcov", IndexMap::from([
+                    ("229E", Vec::from(["229E", "Camel alphacoronavirus"])),
+                    ("HKU1", Vec::from(["HKU1"])),
+                    ("NL63", Vec::from(["NL63"])),
+                    ("OC43", Vec::from(["OC43"])),
+                ])),
+            ]);
+            
+            let virus_subtypes = match subtypes.get(&args.virus.as_str()) {
+                Some(subtype_map) => subtype_map,
+                None => unimplemented!("No entry found for the given virus key."),
+            };
 
-            3. Adopt BLAST ANI and DIAMON AAI distance measures and summarise as table.
-
-            4. Maybe use kNN or k-MNN to define nearest neighbors?
-
-            5. Maybe output graphs for Netview?
-
-            6. Phylogeny - can of worms...
-
-            7. Taxid database selection or leave it to workflow?
-
-            */
-
-            let subtype_db = SubtypeDatabase::from(&args.database, &args.outdir)?;
-
-            for fasta in &args.input {
-                subtype_db.subtype(fasta, &args.outdir, None, args.threads)?;
-            }
+            subtype::process_ncbi_genotypes(&args.input, &args.output, &virus_subtypes)?;
         }
     }
 

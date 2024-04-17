@@ -19,10 +19,63 @@ pub enum Commands {
     Coverage(CoverageArgs),
     /// Subtyping of consensus assemblies against curated genotype collections
     Subtype(SubtypeArgs),
+    /// Process NCBI Virus meta data files to attempt genotype extraction
+    ProcessNcbi(ProcessNcbiArgs),
 }
 
 #[derive(Debug, Args)]
 pub struct SubtypeArgs {
+    /// Consensus assemblies for subtyping
+    #[clap(long, short = 'i', num_args(0..))]
+    pub input: Vec<PathBuf>,
+    /// Consensus assemblies for subtyping
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+    /// Databases for subtyping
+    #[clap(long, short = 'd')]
+    pub database: PathBuf,
+    /// Threads for Diamond and BLAST
+    #[clap(long, short = 't', default_value = "2")]
+    pub threads: u32,
+    /// Minimum percent nucleotide target coverage
+    #[clap(long, short = 'c', default_value="20")]
+    pub min_cov: f64,
+    /// Minimum percent amino acid target coverage
+    #[clap(long, short = 'a', default_value="0")]
+    pub min_cov_aa: f64,
+    /// Minimum percent shared protein coverage
+    #[clap(long, short = 'p', default_value="0")]
+    pub min_cov_prot: f64,
+    /// Genomic neighbor typing metric to use for inference of genotypes
+    #[clap(long, short = 'm', default_value="ani")]
+    pub metric: String,
+    /// Show the highest number of ranked matches of the selected metric
+    #[clap(long, short = 'r', default_value="5")]
+    pub ranks: usize,
+    /// Show the highest number of ranked matches of the selected metric
+    #[clap(long, short = 'w')]
+    pub workdir: Option<PathBuf>,
+    /// Keep directory with working data
+    #[clap(long, short = 'k')]
+    pub keep: bool,
+}
+
+
+#[derive(Debug, Args)]
+pub struct ProcessNcbiArgs {
+    /// NCBI Virus meta data file 
+    #[clap(long, short = 'i')]
+    pub input: PathBuf,
+    /// Supported virus subtype processing scheme
+    #[clap(long, short = 'v')]
+    pub virus: String,
+    /// Vircov database meta data file 
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct AniArgs {
     /// Consensus assemblies for subtyping
     #[clap(long, short = 'i', num_args(0..))]
     pub input: Vec<PathBuf>,
@@ -36,6 +89,7 @@ pub struct SubtypeArgs {
     #[clap(long, short = 't', default_value = "2")]
     pub threads: u32,
 }
+
 
 #[derive(Debug, Args)]
 pub struct CoverageArgs {

@@ -1,7 +1,7 @@
 [package]
 rust-version = "1.76"
 name = "vircov"
-version = "0.7.0"
+version = "0.8.0"
 authors = ["esteinig <eike.steinig@unimelb.edu.au>"]
 description = "Vircov: genome coverage tools for metagenomic diagnostics of viral pathogens"
 documentation = "https://github.com/esteinig/vircov"
@@ -36,6 +36,14 @@ niffler = "2.5.0"
 serde = "1.0.197"
 tar = "0.4.40"
 tempfile = "3.10.1"
+
+
+netview = { path = "../../netviewr" }
+regex = "1.10.4"
+csv = "1.3.0"
+indexmap = "2.2.6"
+rayon = "1.10.0"
+chrono = "0.4.38"
 
 [dev-dependencies]
 assert_cmd = "2.0.1"
