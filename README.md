@@ -2,7 +2,7 @@
 
 ![](https://img.shields.io/badge/version-0.8.0-black.svg)
 
-Viral whole genome coverage evaluation and genomic neighor typing of consensus assemblies for metagenomic diagnostics of low-abundance infections and pan=viral enrichment protocols
+Viral whole genome coverage evaluation and genomic neighor typing of consensus assemblies for metagenomic diagnostics of low-abundance infections and pan-viral enrichment protocols.
 
 ## Overview
 
