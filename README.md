@@ -2,7 +2,7 @@
 
 ![](https://img.shields.io/badge/version-0.8.0-black.svg)
 
-Viral whole genome coverage evaluation and genomic neighor typing of consensus assemblies for metagenomic diagnostics of low-abundance infections and pan-viral enrichment protocols.
+Viral genome coverage metrics from read alignments and genomic neighbor typing of genome assemblies. 
 
 ## Overview
 
@@ -19,11 +19,11 @@ Viral whole genome coverage evaluation and genomic neighor typing of consensus a
 
 ## Purpose
 
-`Vircov` implments two modules that address common challenges associated with identification and recovery of viral genomes for metagenomic diagnostics applications:
+`Vircov` implements two modules that address common challenges associated with identification and recovery of viral genomes for metagenomic diagnostics applications:
 
-1. Viral metagenomic diagnostics from low-abundance clinical samples can be challenging in the absence of sufficient genome coverage. `Vircov` extracts distinct non-overlapping regions from a reference alignment and generates some helpful statistics. It can be used to flag potential hits without inspection of coverage plots in automated pipelines and reports. Coverage evaluations and automated selection of reference genomes for subsequent consensus assembly form the initial step in detection of viral genomes from the scan-remap pipeline in `Cerebro`.
+Viral metagenomic diagnostics from low-abundance clinical samples can be challenging in the absence of sufficient genome coverage. `Vircov` extracts distinct non-overlapping regions from a reference alignment and generates some coverage statistics. It can be used to flag potential hits without inspection of coverage plots in automated pipelines and reports. Coverage evaluations and automated selection of reference genomes for downstream consensus assembly form the initial step in detection of viral genomes from the "scan-remap" virus-focused pipeline in `Cerebro`.
 
-2. Viral subtyping can be challenging in the absence of consistent subtyping schemes or where detailed tracking of lineage emergence - such as for SARS-CoV-2 or other viruses covered by Nextstrain - is not desired. `Vircov` integrates NCBI Virus derived subtyping schemes and reference database construction automated with `Cipher`. It rapidly compute average amino acid and nucleotide identities (AAI and ANI) as well as mutual nearest neighbor population graphs based on genome similarity or phylogenetic trees to infer genotypes from consensus assemblies - a form of genomic neighbor typing previously applied to bacterial genomes ().  
+Viral assembly subtyping can be challenging for metagenomics due to the potential of . `Vircov` integrates NCBI Virus derived subtyping schemes and reference database construction automated with `Cipher`. It rapidly compute average amino acid and nucleotide identities (AAI and ANI) as well as mutual nearest neighbor population graphs based on genome similarity or reference phylogenetic trees to infer genotypes from consensus assemblies - a form of genomic neighbor typing previously applied to bacterial genomes and AMR inference ([Brinda et al. 2020](https://www.nature.com/articles/s41564-019-0656-6), [Steinig et al. 2022](https://www.biorxiv.org/content/10.1101/2022.02.05.479210v1.full)).  
 
 ## Implementation
 
