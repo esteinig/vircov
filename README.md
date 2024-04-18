@@ -1,4 +1,4 @@
-# vircov <a href='https://github.com/esteinig'><img src='docs/vircov.png' align="right" height="270"/></a>
+# vircov <a href='https://github.com/esteinig'><img src='docs/vircov.png' align="right" height="200"/></a>
 
 ![](https://img.shields.io/badge/version-0.8.0-black.svg)
 
