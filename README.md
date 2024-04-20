@@ -175,6 +175,6 @@ Not a very creative abbreviation of "virus coverage" but the little spectacles i
 ## Contributors
 
 * Prof. Deborah Williamson, Prof. Tim Stinear, Prof. Lachlan Coin (principal investigators for META-GP)
-* Dr. Chuan Kok Lim (Acting Director, Victorian Ifnectious Diseases Reference Laboratory)
+* Dr. Chuan Kok Lim (Acting Director, Victorian Infectious Diseases Reference Laboratory)
 * Dr. Leon Caly, Dr. Ammar Aziz (Translational Diagnostics Laboratory, VIDRL)
 
