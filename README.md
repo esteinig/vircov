@@ -2,7 +2,7 @@
 
 ![](https://img.shields.io/badge/version-0.8.0-black.svg)
 
-Viral genome coverage metrics from read alignments and genomic neighbor typing of genome assemblies. 
+Viral genome coverage metrics from read alignments and genomic neighbor typing schemes for subtyping of assembled viral genomes.
 
 ## Overview
 
