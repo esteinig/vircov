@@ -25,7 +25,7 @@ Viral genome coverage metrics from read alignments and genomic neighbor typing s
 
 * Viral metagenomic diagnostics from low-abundance clinical samples can be challenging in the absence of sufficient genome coverage. `Vircov` extracts distinct non-overlapping regions from a reference alignment and generates some coverage statistics. It can be used to flag potential hits without inspection of coverage plots in automated pipelines and reports. Coverage evaluations and automated selection of reference genomes for downstream consensus assembly form the initial step in detection of viral genomes from the "scan-remap" virus-focused pipeline in `Cerebro`.
 
-* Viral assembly subtyping can be challenging even when full genomes can be recovered from enriched metagenomic data due to differences in genome-informed lineage subtyping schemes such as those inferred from phylogenies with Nextstrain and other traditional schemes e.g. based on serology and single gene typing for a range of highly divergent viruses. `Vircov` integrates custom, user-defined and reference-database derived subtyping schemes whose construction can be automated with `Cipher`. We make automatically updated [subtyping databases]() available for a range of common viruses where data-sharing arrangements make this possible (e.g. NCBI- but not GISAID-derived assemblies). Schemes are checked for inconsistiencies in automated annotation extraction by our bioinformatics team at the Victorian Infectious Diseases Reference Laboratory (VIDRL) in Melbourne.
+* Viral assembly subtyping can be challenging even when full genomes can be recovered from enriched metagenomic data due to differences in genome-informed lineage subtyping schemes such as those inferred from phylogenies with Nextstrain and other traditional schemes e.g. based on serology and single gene typing for a range of highly divergent viruses. `Vircov` integrates custom, user-defined and reference-database derived subtyping schemes whose construction can be automated with `Cipher`. 
 
 * `Vircov` rapidly computes average amino acid and nucleotide identities (AAI and ANI) as well as mutual nearest neighbor population graphs ([Neuditschko et al. 2012](), [Steinig et al. 2016]()) based on genome similarity or phylogenetic distances to rank and assign subtypes, clades and other genome-associated meta-data from consensus assemblies - a form of genomic neighbor typing previously applied to bacterial genomes and AMR inference ([Brinda et al. 2020](https://www.nature.com/articles/s41564-019-0656-6), [Steinig et al. 2022](https://www.biorxiv.org/content/10.1101/2022.02.05.479210v1.full)).  
 
@@ -145,6 +145,10 @@ vircov --alignment test.paf  \
 
 ### Genomic neighbor subtyping
 
+
+#### Reference databases and subtyping schemes
+
+We make automatically updated [subtyping databases]() and parsed genotype annotation schemes available for a range of common viral pathogen, at least where data-sharing arrangements make this possible (e.g. NCBI- but not GISAID™-derived assemblies). Scheme extractions and release updates are checked and if necessary corrected by our bioinformatics team at the Victorian Infectious Diseases Reference Laboratory (VIDRL) in Melbourne.
 
 ## Concepts
 
