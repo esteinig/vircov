@@ -45,7 +45,7 @@ Respiratory pathogens from rapid antigen tests using pan-viral enrichment:
 
 > Moso et al. (2024)
 
-> Beutel-Simoes et al. (2024)
+> Butel-Simoes et al. (2024)
 
 Hepatitis E from clinical samples using whole genome primer-scheme:
 
@@ -57,12 +57,7 @@ Central nervous system infections from clinical samples using short-reads:
 
 Enterovirus D68 from clinical sample using pan-viral enrichment:
 
-> Beutel-Simoes et al. (2024)
-
-Dengue from clinical sample using whole genome primer-scheme:
-
-> Beutel-Simoes et al. (2024)
-
+> Butel-Simoes et al. (2024)
 
 
 ## Dependencies
