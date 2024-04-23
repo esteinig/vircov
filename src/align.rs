@@ -17,7 +17,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::from_utf8;
-use tabled::{Column, MaxWidth, Modify, Style, Table, Tabled};
+use tabled::{settings::{Width, Style, object::Columns}, Table, Tabled};
 use thiserror::Error;
 
 /*
@@ -156,33 +156,33 @@ impl CoverageFields {
 /// A struct for computed output fields for display
 #[derive(Debug, Clone, PartialEq, Tabled)]
 pub struct CoverageTableFields {
-    #[header("Sequence")]
+    #[tabled(rename="Sequence")]
     /// Name of the target sequence
     name: String,
-    #[header("Regions")]
+    #[tabled(rename="Regions")]
     /// Number of non-overlapping alignment regions
     regions: u64,
-    #[header("Reads")]
+    #[tabled(rename="Reads")]
     /// Number of unique reads aligned
     reads: u64,
-    #[header("Alignments")]
+    #[tabled(rename="Alignments")]
     /// Number of alignments
     alignments: u64,
-    #[header("Covered Bases")]
+    #[tabled(rename="Covered Bases")]
     /// Number of bases covered by alignments
     bases: u64,
-    #[header("Total Bases")]
+    #[tabled(rename="Total Bases")]
     /// Length of the target sequence
     length: u64,
-    #[header("Coverage")]
-    #[field(display_with = "display_coverage")]
+    #[tabled(rename="Coverage")]
+    #[tabled(display_with = "display_coverage")]
     /// Fractional coverage of the alignments
     coverage: f64,
     /// Descriptions of the reference sequence headers
-    #[header("Description")]
+    #[tabled(rename="Description")]
     description: String,
     /// Tags for alignment regions in start:stop:aln format
-    #[header("Tags")]
+    #[tabled(rename="Tags")]
     tags: String,
 }
 
@@ -841,9 +841,10 @@ impl ReadAlignment {
                     .iter()
                     .map(CoverageTableFields::from)
                     .collect::<Vec<CoverageTableFields>>();
-                let _table = Table::new(table_fields)
-                    .with(Modify::new(Column(7..)).with(MaxWidth::wrapping(32)))
-                    .with(Style::modern());
+                let mut _table = Table::new(table_fields);
+                
+                _table.modify(Columns::new(7..), Width::wrap(32).keep_words()).with(Style::modern());
+
                 println!("{}", _table);
                 Ok(())
             }

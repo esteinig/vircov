@@ -20,8 +20,15 @@ pub enum Commands {
     /// Subtyping of consensus assemblies against curated genotype collections
     Subtype(SubtypeArgs),
     /// Process NCBI Virus meta data files to attempt genotype extraction
+    FilterDatabase(FilterDatabaseArgs),
+    /// Validate genotype table order with matching sequence names at the same index
+    ValidateGenotypes(ValidateGenotypesArgs),
+    /// Process NCBI Virus meta data files to attempt genotype extraction
     ProcessNcbi(ProcessNcbiArgs),
+    /// Process GISAID and Nextstrain files to attempt genotype extraction
+    ProcessGisaid(ProcessGisaidArgs),
 }
+
 
 #[derive(Debug, Args)]
 pub struct SubtypeArgs {
@@ -52,12 +59,32 @@ pub struct SubtypeArgs {
     /// Show the highest number of ranked matches of the selected metric
     #[clap(long, short = 'r', default_value="5")]
     pub ranks: usize,
+    /// Show the highest number of ranked matches of the selected metric for reference isolates with genotype annotation
+    #[clap(long, short = 'g',)]
+    pub with_genotype: bool,
     /// Show the highest number of ranked matches of the selected metric
     #[clap(long, short = 'w')]
     pub workdir: Option<PathBuf>,
     /// Keep directory with working data
     #[clap(long, short = 'k')]
     pub keep: bool,
+}
+
+
+#[derive(Debug, Args)]
+pub struct ProcessGisaidArgs {
+    /// GISAID sequence file (.fasta)
+    #[clap(long, short = 'f')]
+    pub fasta: PathBuf,
+    /// Nextstrain clade file (.tsv)
+    #[clap(long, short = 'c')]
+    pub clades: PathBuf,
+    /// Optinal output segment annotation
+    #[clap(long, short = 's')]
+    pub segment: Option<String>,
+    /// Vircov database sequence (db_nuc.fasta) and meta-data (db.csv) output directory
+    #[clap(long, short = 'o', default_value=".")]
+    pub outdir: PathBuf,
 }
 
 
@@ -74,11 +101,51 @@ pub struct ProcessNcbiArgs {
     pub output: PathBuf,
 }
 
+
+#[derive(Debug, Args)]
+pub struct FilterDatabaseArgs {
+    /// Vircov database sequence file (.fasta) 
+    #[clap(long, short = 'f')]
+    pub fasta: PathBuf,
+    /// Vircov database genotypes file (.csv)
+    #[clap(long, short = 'g')]
+    pub genotypes: PathBuf,
+    /// Filtered database sequence file (nucleotide or protein) 
+    #[clap(long, short = 'o')]
+    pub output_fasta: Option<PathBuf>,
+    /// Filtered database meta data file 
+    #[clap(long, short = 't')]
+    pub output_genotypes: Option<PathBuf>,
+    /// Minimum sequence length in database sequence file
+    #[clap(long, short = 'm', default_value="0")]
+    pub min_length: usize,
+    /// Remove any duplicate accessions entirely from the database
+    #[clap(long, short = 'r')]
+    pub remove_duplicates: bool,
+    /// Filtered database meta data file 
+    #[clap(long, short = 'a', num_args(0..))]
+    pub accessions: Option<Vec<String>>,
+    /// Filtered database meta data file 
+    #[clap(long, short = 'f')]
+    pub accession_file: Option<PathBuf>,
+}
+
+
+#[derive(Debug, Args)]
+pub struct ValidateGenotypesArgs {
+    /// Vircov database sequence file (nucleotide or protein) 
+    #[clap(long, short = 'f')]
+    pub fasta: PathBuf,
+    /// Vircov database genotypes file (.csv)
+    #[clap(long, short = 'g')]
+    pub genotypes: PathBuf,
+}
+
 #[derive(Debug, Args)]
 pub struct AniArgs {
     /// Consensus assemblies for subtyping
-    #[clap(long, short = 'i', num_args(0..))]
-    pub input: Vec<PathBuf>,
+    #[clap(long, short = 'f', num_args(0..))]
+    pub fasta: Vec<PathBuf>,
     /// Databases for subtyping
     #[clap(long, short = 'd')]
     pub database: PathBuf,

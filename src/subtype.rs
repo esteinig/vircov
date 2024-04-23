@@ -1,19 +1,68 @@
 use anyhow::Result;
 use indexmap::IndexMap;
-use noodles::fasta::record::Definition;
+use noodles::fasta::record::{Record, Definition};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use tabled::settings::{Disable, Style};
 use std::collections::{HashMap, HashSet};
 use std::num::{ParseFloatError, ParseIntError};
 use std::path::{Path, PathBuf};
-use tabled::{Table, Tabled};
+use tabled::{settings::Width, settings::object::Columns, Table, Tabled};
 use thiserror::Error;
 use std::io::Write;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::process::Command;
+use std::os::unix::fs::PermissionsExt;
 
 use tar::Archive;
+
+const SKANI_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/skani");
+const BLASTX_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastx");
+const BLASTN_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastn");
+const MAKEBLASTDB_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/makeblastdb");
+
+
+
+/// Writes included bytes to specified binary files within a given directory
+/// and sets execute permissions.
+///
+/// # Arguments
+///
+/// * `workdir` - The directory where the binary files should be written.
+///
+/// # Errors
+///
+/// This function will return an `io::Error` if any file or IO operation fails.
+fn write_binaries_to_directory(workdir: &Path) -> Result<(), SubtypeDatabaseError> {
+
+    // Ensure the directory exists
+    std::fs::create_dir_all(workdir)?;
+
+    // Function to create file, write data, and set execute permissions
+    fn write_and_set_exec(path: &Path, data: &[u8]) -> Result<(), SubtypeDatabaseError> {
+        let mut file = File::create(path)?;
+        file.write_all(data)?;
+        let mut perms = file.metadata()?.permissions();
+        perms.set_mode(0o755);  // Unix-like systems: Read, write, and execute for owner, read and execute for group and others
+        file.set_permissions(perms)?;
+        Ok(())
+    }
+
+    // Write BLASTX binary
+    write_and_set_exec(&workdir.join("blastx"), BLASTX_BIN_LINUX_X86_64)?;
+
+    // Write BLASTN binary
+    write_and_set_exec(&workdir.join("blastn"), BLASTN_BIN_LINUX_X86_64)?;
+
+    // Write MAKEBLASTDB binary
+    write_and_set_exec(&workdir.join("makeblastdb"), MAKEBLASTDB_BIN_LINUX_X86_64)?;
+
+    // Write SKANI binary
+    write_and_set_exec(&workdir.join("skani"), SKANI_BIN_LINUX_X86_64)?;
+
+    Ok(())
+}
 
 /*
 ========================
@@ -84,6 +133,24 @@ pub struct SubtypeDatabaseFiles {
     db_blastx: PathBuf,
 }
 
+pub struct SubtypeDatabaseBinaries {
+    makeblastdb: PathBuf,
+    blastn: PathBuf,
+    blastx: PathBuf,
+    skani: PathBuf
+}
+impl SubtypeDatabaseBinaries {
+    pub fn new(outdir: &PathBuf) -> Self {
+        Self {
+            makeblastdb: outdir.join("makeblastdb"),
+            blastn: outdir.join("blastn"),
+            blastx: outdir.join("blastx"),
+            skani: outdir.join("skani"),
+        }
+    }
+}
+
+
 #[derive(Error, Debug)]
 pub enum SubtypeDatabaseError {
     #[error("Decompression error")]
@@ -118,6 +185,14 @@ pub enum SubtypeDatabaseError {
     RegexError(#[from] regex::Error),
     #[error("Failed to delete working directory as it is the current user working directory: {0}")]
     DeleteWorkdir(String),
+    #[error("error processing table data (CSV)")]
+    CsvWriteError(#[from] csv::Error),
+    #[error("failed to provide accession arguments")]
+    AccessionArgument,
+    #[error("failed to read accession file")]
+    AccessionFileError,
+    #[error("data mismatch error: {0}")]
+    DataMismatchError(String),
 }
 
 pub struct AlignmentConfig {
@@ -149,8 +224,10 @@ impl Default for BlastConfig {
 pub struct SubtypeDatabase {
     pub name: String,
     pub path: PathBuf,
+    pub protein: bool,
     pub genotypes: Vec<Genotype>,
     pub files: SubtypeDatabaseFiles,
+    pub binaries: SubtypeDatabaseBinaries
 }
 
 impl SubtypeDatabase {
@@ -167,7 +244,6 @@ impl SubtypeDatabase {
         };
         
         create_dir_all(&outdir)?;
-
         decompress_archive(archive, &outdir)?;
 
         let genome_fasta = outdir.join("db").join("db_nuc.fasta");
@@ -179,41 +255,53 @@ impl SubtypeDatabase {
                 genome_fasta.display().to_string(),
             ));
         }
-        if !protein_fasta.exists() {
-            return Err(SubtypeDatabaseError::DatabaseFileMissing(
-                protein_fasta.display().to_string(),
-            ));
-        }
-
-        let protein_fasta_renamed = outdir.join("db").join("db_aa_matched.fasta");
-        SubtypeDatabase::match_fasta_dbs(&protein_fasta, &genome_fasta, &protein_fasta_renamed)?;
 
         if !db_csv.exists() {
             return Err(SubtypeDatabaseError::DatabaseFileMissing(db_csv.display().to_string()))
         }
 
-        let genotypes = read_genotypes_from_file(&db_csv, false)?;
 
+        log::info!("Reading genotype database file...");
+        let genotypes = read_genotypes_from_file(&db_csv, false)?;
         let name = get_base_file_name(&archive)?;
 
-        let db_blastx = outdir.join("blastx");
-        let db_blastn = outdir.join("blastn");
+        let fasta_aa = outdir.join("db").join("db_aa_matched.fasta");
+        let db_blastx = outdir.join("db_blastx");
+        let db_blastn = outdir.join("db_blastn");
 
-        SubtypeDatabase::makedb_blast_nuc(&genome_fasta, &db_blastn)?;
-        SubtypeDatabase::makedb_blast_prot(&protein_fasta_renamed, &db_blastx)?;
-                
-        Ok(Self {
+        log::info!("Writing BLAST binaries to working directory...");
+        write_binaries_to_directory(&outdir)?;
+
+        let db = Self {
             name,
             path: outdir.to_path_buf(),
+            protein: protein_fasta.exists(),
             genotypes,
             files: SubtypeDatabaseFiles {
                 csv: db_csv,
-                fasta_aa: protein_fasta_renamed,
-                _fasta_nuc: genome_fasta,
-                db_blastn,
-                db_blastx,
+                fasta_aa: fasta_aa.clone(),
+                _fasta_nuc: genome_fasta.clone(),
+                db_blastn: db_blastn.clone(),
+                db_blastx: db_blastx.clone(),
             },
-        })
+            binaries: SubtypeDatabaseBinaries::new(&outdir)
+        };
+
+        match protein_fasta.exists() {
+            true => {
+                db.match_fasta_dbs(&protein_fasta, &genome_fasta, &fasta_aa)?;
+                db.makedb_blast_prot(&fasta_aa, &db_blastx)?;
+                true
+            },
+            false => {
+                log::warn!("Database does not contain a protein reference");
+                false
+            }
+        };
+        db.makedb_blast_nuc(&genome_fasta, &db_blastn)?;
+                
+        Ok(db)
+
     }
 
     pub fn subtype(
@@ -234,7 +322,6 @@ impl SubtypeDatabase {
         let blastn_output = self.path.join(format!("{}.{}.blastn.tsv", input_name, self.name));
         let blastx_output = self.path.join(format!("{}.{}.blastx.tsv", input_name, self.name));
 
-        
         log::debug!("Computing average nucleotide identity and coverage...");
         self.run_blastn(
             fasta,
@@ -244,72 +331,87 @@ impl SubtypeDatabase {
             config.blast.max_target_seqs,
             threads,
         )?;
+        
         let ani = self.compute_blastn_ani_cov(&blastn_output)?;
-
-        log::debug!("Computing average amino acid identity and coverage...");
-        self.run_blastx(
-            fasta,
-            &self.files.db_blastx,
-            &blastx_output,
-            config.blast.min_evalue,
-            config.blast.max_target_seqs,
-            threads,
-        )?;
-        let aai = self.compute_blastx_aai_cov(&blastx_output)?;
-
+        let aai =match self.protein {
+            true => {
+                log::debug!("Computing average amino acid identity and coverage...");
+                self.run_blastx(
+                    fasta,
+                    &self.files.db_blastx,
+                    &blastx_output,
+                    config.blast.min_evalue,
+                    config.blast.max_target_seqs,
+                    threads,
+                )?;
+                Some(self.compute_blastx_aai_cov(&blastx_output)?)
+            },
+            false => None
+        };
+       
         let subtype_data = SubtypeSummary::from(
             &input_name, ani, aai, Some(self.genotypes.clone())
         );
 
-        let mut subtype_data = filter_subtype_summaries(
+        log::debug!("Subtype summaries main: {:#?}", subtype_data.len());
+
+        log::info!("Coverage filters: min_cov={} min_cov_aa={} min_cov_prot={}", min_cov, min_cov_aa, min_cov_prot);
+        let subtype_data = filter_subtype_summaries(
             &subtype_data, min_cov, min_cov_aa, min_cov_prot
         )?;
-
-        subtype_data.sort_by(|a, b| {
-                b.ani
-                .partial_cmp(&a.ani)
-                .expect("ANI should not be an optional field")
-        });
         
-        let table_output = self.path.join(format!("{input_name}.vircov.tsv"));
+        log::debug!("Subtype summaries filtered: {}", subtype_data.len());
+        
+        let table_output = self.path.join(format!("{input_name}.filtered.tsv"));
         write_subtype_summaries_to_csv(&subtype_data, &table_output, true)?;
 
         Ok(subtype_data)
     }
-    pub fn create_ranked_tables(&self, output: &PathBuf, subtype_summaries: &Vec<SubtypeSummary>, metric: &str, ranks: usize, print_ranks: bool, print_tops: bool) -> Result<(), SubtypeDatabaseError> {
+    pub fn create_ranked_tables(&self, output: &PathBuf, subtype_summaries: &Vec<SubtypeSummary>, metric: &str, ranks: usize, print_ranks: bool, with_genotype: bool, protein: bool) -> Result<(), SubtypeDatabaseError> {
+
+        let subtype_summaries = match with_genotype {
+            true => subtype_summaries.into_iter().filter(|s| {
+                s.target_genotype.is_some()
+            }).cloned().collect(),
+            false => subtype_summaries.clone()
+        };
 
         let file_groups = group_and_sort_summaries_by_file(&subtype_summaries, metric)?;
 
+        let mut output_rows = Vec::new();
         for file_summary in file_groups {
             let query_groups = group_and_sort_summaries_by_query(&file_summary.summaries, metric)?;
             
+
             let mut query_subsets_ranks = Vec::new();
-            let mut query_subsets_tops = Vec::new();
             for query_summary in query_groups {
                 
                 let mut ranked_subset: Vec<SubtypeSummary> = query_summary.summaries.iter().take(ranks).map(|s| s.clone()).collect();
-                let mut top_subset: Vec<SubtypeSummary> = query_summary.summaries.iter().take(1).map(|s| s.clone()).collect();
 
                 query_subsets_ranks.append(&mut ranked_subset);
-                query_subsets_tops.append(&mut top_subset);
             }
 
             let ranked_file_subset_path = self.path.join(format!("{}.ranks.tsv", file_summary.file));
             write_subtype_summaries_to_csv(&query_subsets_ranks, &ranked_file_subset_path, true)?;
-
-            let top_file_subset_path = self.path.join(format!("{}.top.tsv", file_summary.file));
-            write_subtype_summaries_to_csv(&query_subsets_tops, &top_file_subset_path, true)?;
-            write_subtype_summaries_to_csv(&query_subsets_ranks, &output, true)?;
+            
 
             if print_ranks {
-                let subtable = Table::new(&query_subsets_ranks);
-                println!("{}", subtable);
-            } else if print_tops {
-                let subtable = Table::new(&query_subsets_tops);
+                let mut subtable = Table::new(&query_subsets_ranks);
+                subtable.modify(Columns::new(1..3), Width::truncate(match protein { true => 16, false => 32}).suffix("...")).with(Style::modern());
+
+                if !protein {
+                    subtable.with(Disable::column(Columns::new(3..9)));
+                }
+
                 println!("{}", subtable);
             }
+            output_rows.push(query_subsets_ranks);
 
         }
+
+        let rows: Vec<SubtypeSummary> = output_rows.iter().flatten().cloned().collect();
+        write_subtype_summaries_to_csv(&rows, &output, true)?;
+
         Ok(())
     }
     pub fn remove_workdir(&self) -> Result<(), SubtypeDatabaseError> {
@@ -325,19 +427,9 @@ impl SubtypeDatabase {
     ) -> Result<Vec<BlastAniSummary>, SubtypeDatabaseError> {
         let file = File::open(blastn_results)?;
         let reader = BufReader::new(file);
-
-        // Convert lines of the file into an iterator of BlastRecord results
         let parsed_lines = parse_blast(reader.lines().filter_map(Result::ok));
-
         let alignment_blocks = collect_alignment_blocks(parsed_lines)?;
-
-        let mut summaries = process_alignments(alignment_blocks)?;
-        
-        summaries.sort_by(|a, b| {
-                b.ani
-                .partial_cmp(&a.ani)
-                .expect("ANI should not be an optional field")
-        });
+        let summaries = process_alignments(alignment_blocks)?;
 
         Ok(summaries)
     }
@@ -347,17 +439,11 @@ impl SubtypeDatabase {
     ) -> Result<Vec<BlastAaiSummary>, SubtypeDatabaseError> {
         let genome_info = parse_aa_fasta(&self.files.fasta_aa)?;
         let genome_alns = parse_and_organize_alignments(blastx_results, &genome_info)?;
-        let mut summaries = compute_summaries(&genome_info, &genome_alns);
-
-        summaries.sort_by(|a, b| {
-            b.aai
-                .partial_cmp(&a.aai)
-                .expect("AAI should not be an optional field")
-        });
+        let summaries = compute_summaries(&genome_info, &genome_alns);
 
         Ok(summaries)
     }
-    pub fn match_fasta_dbs(protein_fasta: &PathBuf, genome_fasta: &PathBuf, protein_fasta_renamed: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+    pub fn match_fasta_dbs(&self, protein_fasta: &PathBuf, genome_fasta: &PathBuf, protein_fasta_renamed: &PathBuf) -> Result<(), SubtypeDatabaseError> {
         
         let proteins = parse_fasta_annotations_file(&protein_fasta)?;
         let genomes = parse_fasta_annotations_file(genome_fasta)?;
@@ -404,6 +490,7 @@ impl SubtypeDatabase {
         Ok(())
     }
     pub fn makedb_blast_nuc(
+        &self,
         db_fasta: &PathBuf,
         output: &PathBuf,
     ) -> Result<(), SubtypeDatabaseError> {
@@ -415,10 +502,12 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "nucl".to_string(),
         ];
-        log::debug!("Running command: makeblastdb {}", &args.join(" "));
-        run_command(args, "makeblastdb")
+        let exec = &self.binaries.makeblastdb.display().to_string();
+        log::debug!("Running command: {} {}", &exec, &args.join(" "));
+        run_command(args, &exec)
     }
     pub fn makedb_blast_prot(
+        &self,
         db_fasta: &PathBuf,
         output: &PathBuf,
     ) -> Result<(), SubtypeDatabaseError> {
@@ -430,8 +519,9 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "prot".to_string(),
         ];
-        log::debug!("Running command: makeblastdb {}", &args.join(" "));
-        run_command(args, "makeblastdb")
+        let exec = &self.binaries.makeblastdb.display().to_string();
+        log::debug!("Running command: {} {}", exec, &args.join(" "));
+        run_command(args, &exec)
     }
     pub fn run_blastn(
         &self,
@@ -460,7 +550,7 @@ impl SubtypeDatabase {
         ];
 
         log::debug!("Running command: blastn with args {}", &args.join(" "));
-        run_command(args, "blastn")
+        run_command(args, &self.binaries.blastn.display().to_string())
     }
     pub fn run_blastx(
         &self,
@@ -489,7 +579,7 @@ impl SubtypeDatabase {
             threads.to_string(),
         ];
         log::debug!("Running command: blastx {}", &args.join(" "));
-        run_command(args, "blastx")
+        run_command(args, &self.binaries.blastx.display().to_string())
     }
 }
 
@@ -674,58 +764,64 @@ pub fn update_subtype_summaries_with_genotypes(
 
 #[derive(Debug, Clone, Tabled, Serialize)]
 pub struct SubtypeSummary {
-    #[header("File")]
+    #[tabled(rename="File")]
     file: String,
-    #[header("Query")]
+    #[tabled(rename="Query")]
     query: String,
-    #[header("Target")]
+    #[tabled(rename="Target")]
     target: String,
-    #[header("Target proteins")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Target proteins")]
+    #[tabled(display_with = "display_optional")]
     target_proteins: Option<usize>,
-    #[header("Shared proteins")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Shared proteins")]
+    #[tabled(display_with = "display_optional")]
     shared_proteins: Option<usize>,
-    #[header("Protein coverage")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Protein coverage")]
+    #[tabled(display_with = "display_optional")]
     aai_tcov_protein: Option<f64>,
-    #[header("AA coverage")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="AA query coverage")]
+    #[tabled(display_with = "display_optional")]
+    aai_qcov_aa: Option<f64>,
+    #[tabled(rename="AA target coverage")]
+    #[tabled(display_with = "display_optional")]
     aai_tcov_aa: Option<f64>,
-    #[header("AAI")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="AAI")]
+    #[tabled(display_with = "display_optional")]
     aai: Option<f64>,
-    #[header("wAAI")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="wAAI")]
+    #[tabled(display_with = "display_optional")]
     aai_weighted: Option<f64>,
-    #[header("Query coverage")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Query coverage")]
+    #[tabled(display_with = "display_optional")]
     ani_qcov: Option<f64>,
-    #[header("Target coverage")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Target coverage")]
+    #[tabled(display_with = "display_optional")]
     ani_tcov: Option<f64>,
-    #[header("ANI")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="ANI")]
+    #[tabled(display_with = "display_optional")]
     ani: Option<f64>,
-    #[header("wANI")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="wANI")]
+    #[tabled(display_with = "display_optional")]
     ani_weighted: Option<f64>,    
-    #[header("Segment")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Segment")]
+    #[tabled(display_with = "display_optional")]
     target_segment: Option<String>,
-    #[header("Genotype")]
-    #[field(display_with = "display_optional")]
+    #[tabled(rename="Genotype")]
+    #[tabled(display_with = "display_optional")]
     target_genotype: Option<String>,
 }
 
 impl SubtypeSummary {
-    pub fn from(input_name: &str, ani_summary: Vec<BlastAniSummary>, aai_summary: Vec<BlastAaiSummary>, genotypes: Option<Vec<Genotype>>) -> Vec<Self> {
-        
+    pub fn from(input_name: &str, ani_summary: Vec<BlastAniSummary>, aai_summary: Option<Vec<BlastAaiSummary>>, genotypes: Option<Vec<Genotype>>) -> Vec<Self> {
+
         let mut summaries = Vec::new();
-        let mut unmatched_aais = aai_summary.clone();
+        let mut unmatched_aais = if let Some(aai) = &aai_summary { aai.clone() } else { Vec::new() };
 
         for ani in ani_summary.iter() {
-            if let Some(aai) = aai_summary.iter().find(|aai| aai.query == ani.qname && aai.target == ani.tname) {
+            let matched_aai = aai_summary.as_ref()
+                .and_then(|aais| aais.iter().find(|aai| aai.query == ani.qname && aai.target == ani.tname));
+
+            if let Some(aai) = matched_aai {
                 summaries.push(SubtypeSummary {
                     file: input_name.to_string(),
                     query: ani.qname.clone(),
@@ -738,12 +834,12 @@ impl SubtypeSummary {
                     ani_tcov: Some(ani.tcov),
                     aai: Some(aai.aai),
                     aai_tcov_protein: Some(aai.protein_tcov),
+                    aai_qcov_aa: Some(aai.aa_qcov),
                     aai_tcov_aa: Some(aai.aa_tcov),
                     aai_weighted: Some(aai.weighted_aai),
                     target_genotype: None,
                     target_segment: None
                 });
-                // Remove the matched AAI from the unmatched list
                 unmatched_aais.retain(|u| !(u.query == ani.qname && u.target == ani.tname));
             } else {
                 summaries.push(SubtypeSummary {
@@ -758,6 +854,7 @@ impl SubtypeSummary {
                     ani_tcov: Some(ani.tcov),
                     aai: None,
                     aai_tcov_protein: None,
+                    aai_qcov_aa: None,
                     aai_tcov_aa: None,
                     aai_weighted: None,
                     target_genotype: None,
@@ -780,6 +877,7 @@ impl SubtypeSummary {
                 ani_tcov: None,
                 aai: Some(aai.aai),
                 aai_tcov_protein: Some(aai.protein_tcov),
+                aai_qcov_aa: Some(aai.aa_qcov),
                 aai_tcov_aa: Some(aai.aa_tcov),
                 aai_weighted: Some(aai.weighted_aai),
                 target_genotype: None,
@@ -798,46 +896,49 @@ impl SubtypeSummary {
 /// Represents a summary of BLAST ANI and coverage results.
 #[derive(Debug, Clone, Tabled)]
 pub struct BlastAniSummary {
-    #[header("Query")]
+    #[tabled(rename="Query")]
     pub qname: String,
-    #[header("Target")]
+    #[tabled(rename="Target")]
     pub tname: String,
-    #[header("Alignments")]
+    #[tabled(rename="Alignments")]
     pub aln_count: usize,
-    #[header("Query coverage")]
+    #[tabled(rename="Query coverage")]
     pub qcov: f64,
-    #[header("Target coverage")]
+    #[tabled(rename="Target coverage")]
     pub tcov: f64,
-    #[header("ANI")]
+    #[tabled(rename="ANI")]
     pub ani: f64,
-    #[header("ANIw")]
+    #[tabled(rename="ANIw")]
     pub ani_weighted: f64,
 }
 
 #[derive(Debug, Clone, Tabled)]
 pub struct BlastAaiSummary {
-    #[header("Query")]
+    #[tabled(rename="Query")]
     query: String,
-    #[header("Target")]
+    #[tabled(rename="Target")]
     target: String,
-    #[header("Target proteins")]
+    #[tabled(rename="Target proteins")]
     target_proteins: usize,
-    #[header("Shared proteins")]
+    #[tabled(rename="Shared proteins")]
     shared_proteins: usize,
-    // #[header("Query protein coverage")]
-    // #[field(display_with = "display_optional")]
+    // #[tabled(rename="Query protein coverage")]
+    // #[tabled(display_with = "display_optional")]
     // protein_qcov: Option<f64>,
-    #[header("Protein coverage")]
-    #[field(display_with = "display_coverage")]
+    #[tabled(rename="Protein coverage")]
+    #[tabled(display_with = "display_coverage")]
     protein_tcov: f64,
-    #[header("AA coverage")]
-    #[field(display_with = "display_coverage")]
+    #[tabled(rename="AA query coverage")]
+    #[tabled(display_with = "display_coverage")]
+    aa_qcov: f64,
+    #[tabled(rename="AA target coverage")]
+    #[tabled(display_with = "display_coverage")]
     aa_tcov: f64,
-    #[header("AAI")]
-    #[field(display_with = "display_coverage")]
+    #[tabled(rename="AAI")]
+    #[tabled(display_with = "display_coverage")]
     aai: f64,
-    #[header("AAIw")]
-    #[field(display_with = "display_coverage")]
+    #[tabled(rename="AAIw")]
+    #[tabled(display_with = "display_coverage")]
     weighted_aai: f64,
 }
 
@@ -915,7 +1016,7 @@ pub fn process_alignments(
             ani,
             qcov: qcov * 100.0,
             tcov: tcov * 100.0,
-            ani_weighted: ani*tcov
+            ani_weighted: ani*tcov*qcov
         });
     }
 
@@ -1223,7 +1324,7 @@ pub fn compute_summaries(
 
             let shared_proteins = shared_proteins.len();
             let protein_tcov = 100.0 * shared_proteins as f64 / total_target_proteins as f64;
-            let (_, aa_tcov) = compute_coverage(alignments);
+            let (aa_qcov, aa_tcov) = compute_coverage(alignments);
 
             let aai =
                 alignments.iter().map(|aln| aln.pident).sum::<f64>() / alignments.len() as f64;
@@ -1235,9 +1336,10 @@ pub fn compute_summaries(
                 shared_proteins,
                 // protein_qcov: None, // full genome input for now
                 protein_tcov,
+                aa_qcov,
                 aa_tcov,
                 aai,
-                weighted_aai: aai * (protein_tcov / 100.) * (aa_tcov / 100.),
+                weighted_aai: aai * (aa_qcov / 100.) * (aa_tcov / 100.),
             });
         }
     }
@@ -1921,9 +2023,9 @@ pub fn filter_subtype_summaries(
     min_cov_prot: f64,
 ) -> Result<Vec<SubtypeSummary>, SubtypeDatabaseError> {
     let filtered_summaries = summaries.iter().filter(|s| {
-        s.ani_tcov.map_or(false, |tcov| tcov >= min_cov)
-            && s.aai_tcov_aa.map_or(false, |tcov_aa| tcov_aa >= min_cov_aa)
-            && s.aai_tcov_protein.map_or(false, |tcov_prot| tcov_prot >= min_cov_prot)
+        s.ani_tcov.map_or(true, |tcov| tcov >= min_cov)
+            && s.aai_tcov_aa.map_or(true, |tcov_aa| tcov_aa >= min_cov_aa)
+            && s.aai_tcov_protein.map_or(true, |tcov_prot| tcov_prot >= min_cov_prot)
     })
     .cloned()
     .collect::<Vec<_>>();
@@ -2166,6 +2268,9 @@ pub fn process_ncbi_genotypes(
     Ok(())
 }
 
+
+
+
 /// Concatenates multiple Fasta files into a single file.
 ///
 /// The function takes a base Fasta file and a list of Fasta files to append to the base file.
@@ -2265,6 +2370,259 @@ pub fn write_subtype_summaries_to_csv(
         writer.serialize(summary).map_err(SubtypeDatabaseError::SerializeRecord)?;
     }
     writer.flush()?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct NextstrainClade {
+    name: String,
+    clade: String,
+}
+
+
+/// Parses a TSV file with NextstrainClade data and a FASTA file to associate clades with sequence IDs,
+/// and outputs modified sequences and genotype records.
+///
+/// # Arguments
+///
+/// * `tsv_path` - Path to the TSV file containing the Nextstrain clade information.
+/// * `fasta_path` - Path to the FASTA file containing sequence data.
+/// * `output_fasta` - Path to output modified FASTA sequences.
+/// * `output_csv` - Path to output matched genotype records.
+/// * `segment` - Optional parameter specifying the segment of the sequence.
+///
+/// # Errors
+///
+/// This function can return errors related to file reading and data processing as described by `SubtypeDatabaseError`.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let result = process_gisaid_genotypes(
+///     Path::new("clades.tsv"),
+///     Path::new("sequences.fasta"),
+///     PathBuf::from("output_sequences.fasta"),
+///     PathBuf::from("output_genotypes.csv"),
+///     Some("Segment 1")
+/// );
+/// match result {
+///     Ok(()) => println!("Processing completed successfully."),
+///     Err(e) => println!("Error: {}", e),
+/// }
+/// ```
+pub fn process_gisaid_genotypes(
+    tsv_path: &Path,
+    fasta_path: &Path,
+    output_fasta: PathBuf,
+    output_csv: PathBuf,
+    segment: Option<&str>,
+) -> Result<(), SubtypeDatabaseError> {
+
+    // Parse the TSV file to get clade information
+    let mut reader = csv::ReaderBuilder::new()
+        .delimiter(b'\t')
+        .has_headers(true)
+        .from_path(tsv_path)?;
+
+    let clades: Vec<NextstrainClade> = reader.deserialize().collect::<Result<_, _>>()?;
+
+    // Prepare to read the FASTA file and write matched sequences
+    let mut fasta_reader = noodles::fasta::Reader::new(BufReader::new(File::open(fasta_path)?));
+    let fasta_writer = BufWriter::new(File::create(output_fasta)?);
+    let mut fasta_writer = noodles::fasta::Writer::new(fasta_writer);
+
+    // Prepare to write matched Genotypes to CSV
+    let csv_writer = BufWriter::new(File::create(output_csv)?);
+    let mut csv_writer = csv::WriterBuilder::new().from_writer(csv_writer);
+
+    // Process each FASTA record
+    for result in fasta_reader.records() {
+        let record = result?;
+        let id = record.name().to_string();
+
+        // Check if any clade name is contained within the sequence ID
+        for clade in &clades {
+            if id.contains(&clade.name) {
+                let modified_record = Record::new(
+                    Definition::new(clade.name.clone(), None), record.sequence().clone()
+                );
+
+                let genotype = Genotype {
+                    accession: clade.name.clone(),
+                    genotype: Some(clade.clade.clone()),
+                    segment: segment.map(|s| s.to_string()),
+                };
+
+                // Write modified sequence to FASTA file
+                fasta_writer.write_record(&modified_record)?;
+
+                // Write matched genotype to CSV file
+                csv_writer.serialize(&genotype)?;
+                break; // Stop searching after the first match
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Synchronizes entries in genotype CSV and sequence FASTA, applying filters and ensuring matched outputs.
+///
+/// # Arguments
+///
+/// * `genotype_csv_path` - Path to the CSV file containing genotype records.
+/// * `fasta_path` - Path to the FASTA file containing sequence data.
+/// * `output_csv_path` - Path for the output filtered CSV file.
+/// * `output_fasta_path` - Path for the output filtered FASTA file.
+/// * `min_length` - Minimum sequence length required to retain a record.
+/// * `remove_duplicates` - Whether to remove duplicate accessions.
+/// * `entries_to_remove` - List of accession entries to remove from consideration.
+///
+/// # Errors
+///
+/// This function can return various errors related to file I/O and data parsing as encapsulated by `SubtypeDatabaseError`.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+///
+/// let result = filter_database(
+///     PathBuf::from("genotypes.csv"),
+///     PathBuf::from("sequences.fasta"),
+///     PathBuf::from("synchronized_genotypes.csv"),
+///     PathBuf::from("synchronized_sequences.fasta"),
+///     100, // Minimum sequence length
+///     true, // Remove duplicates
+///     vec!["accession1".to_string(), "accession2".to_string()] // Entries to remove
+/// );
+///
+/// match result {
+///     Ok(()) => println!("Entries synchronized successfully."),
+///     Err(e) => println!("Error occurred: {}", e),
+/// }
+/// ```
+pub fn filter_database(
+    genotype_csv_path: PathBuf,
+    fasta_path: PathBuf,
+    output_csv_path: PathBuf,
+    output_fasta_path: PathBuf,
+    min_length: usize,
+    remove_duplicates: bool,
+    entries_to_remove: Vec<String>
+) -> Result<(), SubtypeDatabaseError> {
+    // Set up CSV reading
+    let mut rdr = csv::ReaderBuilder::new().from_path(genotype_csv_path)?;
+    let mut genotype_map: HashMap<String, Genotype> = HashMap::new();
+    let mut seen_accessions = HashSet::new();
+
+    // Filter genotype entries based on entries to remove and duplicates
+    for result in rdr.deserialize() {
+        let genotype: Genotype = result?;
+        if !entries_to_remove.contains(&genotype.accession) &&
+            (!remove_duplicates || seen_accessions.insert(genotype.accession.clone())) {
+            genotype_map.insert(genotype.accession.clone(), genotype);
+        }
+    }
+
+    // Set up FASTA reading and writing
+    let mut fasta_reader = noodles::fasta::Reader::new(BufReader::new(File::open(&fasta_path)?));
+    let fasta_writer = BufWriter::new(File::create(&output_fasta_path)?);
+    let mut fasta_writer = noodles::fasta::Writer::new(fasta_writer);
+
+    // Set up CSV writing
+    let mut wtr = csv::WriterBuilder::new().from_path(output_csv_path)?;
+
+    let mut matched_genotypes = Vec::new();
+
+    // Process FASTA entries and synchronize with genotypes
+    for result in fasta_reader.records() {
+        let record = result?;
+        if record.sequence().len() >= min_length &&
+           !entries_to_remove.contains(&record.name().to_string()) &&
+           genotype_map.contains_key(record.name()) {
+            if let Some(genotype) = genotype_map.get(record.name()) {
+                // Write synchronized sequence to FASTA
+                fasta_writer.write_record(&record)?;
+
+                // Collect matched genotype for later output to maintain order
+                matched_genotypes.push(genotype.clone());
+            }
+        }
+    }
+
+    // Write synchronized genotypes to CSV
+    for genotype in matched_genotypes {
+        wtr.serialize(&genotype)?;
+    }
+
+    Ok(())
+}
+
+
+
+/// Validates that the sequence names in a FASTA file match the accessions in a corresponding CSV file.
+///
+/// # Arguments
+///
+/// * `csv_path` - Path to the CSV file containing genotype records.
+/// * `fasta_path` - Path to the FASTA file containing sequence data.
+///
+/// # Errors
+///
+/// This function will return an error if there are mismatches between the accessions and sequence names,
+/// or if any I/O or parsing errors occur.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+///
+/// let result = validate_genotypes(
+///     Path::new("genotypes.csv"),
+///     Path::new("sequences.fasta")
+/// );
+///
+/// match result {
+///     Ok(_) => println!("Validation successful."),
+///     Err(e) => println!("Validation error: {}", e),
+/// }
+/// ```
+pub fn validate_genotypes(csv_path: &Path, fasta_path: &Path) -> Result<(), SubtypeDatabaseError> {
+    // Set up CSV reader
+    let mut rdr = csv::ReaderBuilder::new().has_headers(true).from_path(csv_path)?;
+    
+    // Set up FASTA reader
+    let mut fasta_reader = noodles::fasta::Reader::new(BufReader::new(File::open(fasta_path)?));
+
+    // Collect genotype data
+    let genotypes: Vec<Genotype> = rdr.deserialize().collect::<Result<Vec<_>, _>>()?;
+    
+    // Initialize mismatch collection
+    let mut mismatches = Vec::new();
+    
+    // Check for mismatches
+    for (index, record) in fasta_reader.records().enumerate() {
+        let record = record?;
+        if index < genotypes.len() {
+            let genotype = &genotypes[index];
+            if record.name() != genotype.accession {
+                let message = format!("Mismatch at index {}: CSV '{}', FASTA '{}'", index, genotype.accession, record.name());
+                log::info!("{}", message);
+                mismatches.push(message);
+            }
+        }
+    }
+
+    // If there are mismatches, raise an error
+    if !mismatches.is_empty() {
+        return Err(SubtypeDatabaseError::DataMismatchError("Accessions do not match sequence names.".to_string()));
+    } else {
+        log::info!("Sequence and genotype file have matching order and accessions 🥳")
+    }
+
     Ok(())
 }
 

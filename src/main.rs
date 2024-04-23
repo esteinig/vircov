@@ -10,6 +10,8 @@ use anyhow::Result;
 use clap::Parser;
 use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::io::{BufRead, BufReader};
 
 mod align;
 mod covplot;
@@ -157,7 +159,7 @@ fn main() -> Result<(), VircovError> {
                 .collect();
         
 
-            subtype_db.create_ranked_tables(&args.output, &collected, &args.metric, args.ranks, true, false)?;
+            subtype_db.create_ranked_tables(&args.output, &collected, &args.metric, args.ranks, true, args.with_genotype, subtype_db.protein)?;
             
             if !args.keep {
                 subtype_db.remove_workdir()?;
@@ -187,8 +189,8 @@ fn main() -> Result<(), VircovError> {
                     ("HMPV-A2", Vec::from(["/A2", "type A2", "A2/"])),
                     ("HMPV-B1", Vec::from(["/B1", "type B1", "B1/"])),
                     ("HMPV-B2", Vec::from(["/B2", "type B2", "B2/"])),
-                    ("HMPV-A", Vec::from(["/A", "type A", "A/"])),
-                    ("HMPV-B", Vec::from(["/B", "type B", "B/"])),
+                    ("HMPV-A", Vec::from(["A/HMPV/Beijing", "type A", "/A,"])),
+                    ("HMPV-B", Vec::from(["B/HMPV/Beijing", "type B", "/B,"])),
                 ])),
                 ("hcov", IndexMap::from([
                     ("229E", Vec::from(["229E", "Camel alphacoronavirus"])),
@@ -205,7 +207,48 @@ fn main() -> Result<(), VircovError> {
 
             subtype::process_ncbi_genotypes(&args.input, &args.output, &virus_subtypes)?;
         }
+        Commands::ProcessGisaid(args) => {
+            
+            let db_file = args.outdir.join("db.csv");
+            let db_nuc_file = args.outdir.join("db_nuc.fasta");
+            subtype::process_gisaid_genotypes(&args.clades, &args.fasta, db_nuc_file, db_file, args.segment.as_deref())?;
+        }
+        Commands::FilterDatabase(args) => {
+            
+
+            let accessions = match (&args.accessions, &args.accession_file){
+                (_, Some(file)) => read_lines_to_vec(&file).map_err(|_| subtype::SubtypeDatabaseError::AccessionFileError)?,
+                (Some(accessions), _) => accessions.clone(),
+                (None, None) => Vec::new()
+            };
+
+            let (fasta_out, meta_out) = match (&args.output_fasta, &args.output_genotypes) {
+                (Some(fasta), None) => (fasta.clone(), args.genotypes.with_extension("_filtered.csv")),
+                (Some(fasta), Some(meta)) => (fasta.clone(), meta.clone()),
+                (None, Some(meta)) => (args.fasta.with_extension("_filtered.fasta"), meta.clone()),
+                (None, None) => (args.fasta.with_extension("_filtered.fasta"), args.genotypes.with_extension("_filtered.csv"))
+            };
+            
+            subtype::filter_database(args.genotypes.clone(), args.fasta.clone(), meta_out, fasta_out, args.min_length, args.remove_duplicates, accessions)?;
+        }
+        Commands::ValidateGenotypes(args) => {
+            
+            subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
+        }
     }
 
     Ok(())
+}
+
+fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
+    let file = std::fs::File::open(filename)?;
+    let reader = BufReader::new(file);
+    let mut lines = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        lines.push(line);
+    }
+
+    Ok(lines)
 }
