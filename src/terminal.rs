@@ -1,4 +1,3 @@
-use clap::builder::TypedValueParser;
 use clap::{ArgAction, Args, Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -162,7 +161,7 @@ pub struct AniArgs {
 pub struct CoverageArgs {
     /// Alignment file (SAM/BAM/CRAM/PAF)
     #[clap(
-        short='i', long, value_parser = clap::builder::PathBufValueParser::new().map(|p| validate_file_path(&p)), required = true
+        short='i', long, required = true
     )]
     pub alignment: PathBuf,
     /// bam: SAM/BAM/CRAM alignment; paf: PAF alignment
@@ -184,8 +183,7 @@ pub struct CoverageArgs {
     /// be the same reference file as used for the alignment.
     #[clap(
         short = 'f',
-        long = "fasta", 
-        value_parser = clap::builder::PathBufValueParser::new().map(|p| validate_file_path(&p))
+        long = "fasta"
     )]
     pub fasta: Option<PathBuf>,
     /// Minimum length of the aligned query sequence
@@ -262,7 +260,7 @@ pub struct CoverageArgs {
     /// alignments of unwanted viruses, e.g. using taxonomy
     /// identifiers or species names in target sequence headers.
     /// Lines starting with "#" and empty lines are not considered.
-    #[clap(short, long, value_parser = clap::builder::PathBufValueParser::new().map(|p| validate_file_path(&p)))]
+    #[clap(short, long)]
     pub exclude: Option<PathBuf>,
     /// Prints pretty output table  
     ///
@@ -432,11 +430,4 @@ pub fn get_styles() -> clap::builder::Styles {
                 .bold()
                 .fg_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Green))),
         )
-}
-
-fn validate_file_path(path: &PathBuf) -> Result<(), String> {
-    if !path.exists() {
-        return Err(format!("File path does not exist: {}", path.display()));
-    }
-    Ok(())
 }
