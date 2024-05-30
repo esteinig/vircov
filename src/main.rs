@@ -27,8 +27,6 @@ mod utils;
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), VircovError> {
 
-
-
     init_logger();
 
     let terminal = App::parse();

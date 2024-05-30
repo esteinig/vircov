@@ -171,7 +171,6 @@ pub struct CoverageArgs {
     #[clap(
         long,
         value_name = "bam|paf",
-        value_parser=clap::builder::PossibleValuesParser::new(["bam", "paf"]),
         ignore_case=true,
         hide_possible_values=true
     )]
@@ -375,8 +374,7 @@ pub struct CoverageArgs {
     #[clap(
         short = 'B',
         long = "group-select-by",
-        value_name = "coverage",
-        value_parser=clap::builder::PossibleValuesParser::new(["reads", "coverage"]),
+        value_name = "reads|coverage", // reads / coverage
         ignore_case=true,
         hide_possible_values=false
     )]
