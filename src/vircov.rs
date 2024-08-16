@@ -45,7 +45,30 @@ pub struct AlignerConfig {
     pub output: Option<PathBuf>,
     pub threads: usize
 }
-
+impl AlignerConfig {
+    pub fn remap(id: &str) -> Self {
+        Self {
+            index: PathBuf::from(format!("{id}.fasta")),
+            output: Some(PathBuf::from(format!("{id}.sam"))),
+            threads: 2,
+            ..Default::default()
+        }
+    }
+}
+impl Default for AlignerConfig {
+    fn default() -> Self {
+        Self {
+            aligner: Aligner::Minimap2,
+            preset: Some(Preset::Sr),
+            args: None,
+            input: Vec::from([PathBuf::from("smoke_R1.fastq.gz"), PathBuf::from("smoke_R2.fastq.gz")]),
+            paired_end: true,
+            index: PathBuf::from("reference.fasta"),
+            output: Some(PathBuf::from("test.sam")),
+            threads: 8
+        }
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReferenceConfig {
     pub fasta: Option<PathBuf>,
@@ -54,7 +77,7 @@ pub struct ReferenceConfig {
 impl Default for ReferenceConfig {
     fn default() -> Self {
         Self {
-            fasta: None,
+            fasta: Some(PathBuf::from("reference.fasta")),
             exclude: None
         }
     }

@@ -38,42 +38,6 @@ pub enum Commands {
 
 #[derive(Debug, Args)]
 pub struct AlignArgs {
-    /// Consensus assemblies for subtyping
-    #[clap(long, short = 'i', num_args(0..))]
-    pub input: Vec<PathBuf>,
-    /// Consensus assemblies for subtyping
-    #[clap(long, short = 'o')]
-    pub output: PathBuf,
-    /// Databases for subtyping
-    #[clap(long, short = 'd')]
-    pub database: PathBuf,
-    /// Threads for Diamond and BLAST
-    #[clap(long, short = 't', default_value = "2")]
-    pub threads: u32,
-    /// Minimum percent nucleotide target coverage
-    #[clap(long, short = 'c', default_value="20")]
-    pub min_cov: f64,
-    /// Minimum percent amino acid target coverage
-    #[clap(long, short = 'a', default_value="0")]
-    pub min_cov_aa: f64,
-    /// Minimum percent shared protein coverage
-    #[clap(long, short = 'p', default_value="0")]
-    pub min_cov_prot: f64,
-    /// Genomic neighbor typing metric to use for inference of genotypes
-    #[clap(long, short = 'm', default_value="ani")]
-    pub metric: String,
-    /// Show the highest number of ranked matches of the selected metric
-    #[clap(long, short = 'r', default_value="5")]
-    pub ranks: usize,
-    /// Show the highest number of ranked matches of the selected metric for reference isolates with genotype annotation
-    #[clap(long, short = 'g',)]
-    pub with_genotype: bool,
-    /// Show the highest number of ranked matches of the selected metric
-    #[clap(long, short = 'w')]
-    pub workdir: Option<PathBuf>,
-    /// Keep directory with working data
-    #[clap(long, short = 'k')]
-    pub keep: bool,
 }
 
 #[derive(Debug, Args)]
@@ -249,29 +213,6 @@ pub struct CoverageArgs {
     /// Filters (&) alignments by a minimum mapping quality.
     #[clap(short = 'M', long, default_value = "0")]
     pub min_mapq: u8,
-    /// Verbose output statistics  
-    ///
-    /// Single flag (-v) adds whitespace separated tags in the last column,
-    /// corresponding to the number of inferred alignment coverage regions.
-    /// Tag fields are separated by vertical bars (|).
-    ///
-    /// When no grouping argument is given then each tag consists of:
-    ///     start of coverage region
-    ///     | end of coverage region
-    ///     | number of alignments in the region
-    ///
-    /// When the output is grouped, then each tag consists of data from each
-    /// output that has been grouped:
-    ///     name of reference sequence
-    ///     | number of regions
-    ///     | number of reads in region
-    ///     | number of alignments in region
-    ///     | number of base pairs in region
-    ///     | length of reference sequence
-    ///     | coverage on reference sequence
-    ///     | reference sequence description header
-    #[clap(short, long, action = ArgAction::Count)]
-    pub verbose: u64,
     /// Group alignments by a field in the reference sequence description
     ///
     /// Grouping can help to summarize regions and other output statistics
@@ -287,7 +228,7 @@ pub struct CoverageArgs {
     ///   - unique reads are recomputed across members of the group
     ///   - covered base pairs in the reference sequence lengths are set to 0
     ///   - coverage is selected to be the highest by a member of the group.
-    #[clap(short = 'g', long)]
+    #[clap(short = 'g', long, default_value="taxid=")]
     pub group_by: Option<String>,
     /// Group field separator in the reference sequence description
     ///
@@ -351,7 +292,7 @@ pub struct CoverageArgs {
     /// with fewer distinct alignment regions to pass the basic filter. For example,
     /// a reference sequence with 100% coverage and 1 distinct alignment regions would
     /// not be filtered from the report output.
-    #[clap(short = 't', long = "regions-coverage")]
+    #[clap(short = 'T', long = "regions-coverage")]
     pub regions_coverage: Option<f64>,
     /// Minimum read threshold (unique reads in alignment)
     ///
@@ -421,7 +362,8 @@ pub struct CoverageArgs {
         long = "group-select-by",
         value_name = "reads|coverage", // reads / coverage
         ignore_case=true,
-        hide_possible_values=false
+        hide_possible_values=false,
+        default_value="coverage"
     )]
     pub group_select_by: Option<String>,
     /// Output selected sequences with a numeric prefix sorted by descending reads or coverage (--group-select-by)

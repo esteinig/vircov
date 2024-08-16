@@ -67,7 +67,7 @@ pub struct Coverage {
     /// Tags for alignment regions in string format
     pub tags: Vec<Interval<usize, usize>>,
     /// Unique read identifiers for grouped operations
-    pub unique_reads: Vec<String>,
+    pub read_id: Vec<String>,
 }
 
 
@@ -94,7 +94,7 @@ pub struct GroupedCoverage {
     /// Tags for alignment regions in string format 
     pub coverage: Vec<Coverage>,
     /// Unique read identifiers for grouped operations
-    pub unique_reads: Vec<String>,
+    pub read_id: Vec<String>,
 }
 
 impl GroupedCoverage {
@@ -110,7 +110,7 @@ impl GroupedCoverage {
             mean_coverage: 0.,
             max_coverage: 0.,
             coverage: Vec::new(),
-            unique_reads: Vec::new(),
+            read_id: Vec::new(),
         };
         let num_cov = coverage.len();
         let mut ureads: Vec<String> = Vec::new();
@@ -129,7 +129,7 @@ impl GroupedCoverage {
 
             grouped_coverage.coverage.push(field.clone());
 
-            for read in &field.unique_reads {
+            for read in &field.read_id {
                 ureads.push(read.to_string())
             }
         }
@@ -139,7 +139,7 @@ impl GroupedCoverage {
         let unique_reads_grouped: Vec<String> = ureads.iter().unique().map(|x| x.to_string()).collect();
 
         grouped_coverage.total_reads = unique_reads_grouped.len() as u64;
-        grouped_coverage.unique_reads = unique_reads_grouped;
+        grouped_coverage.read_id = unique_reads_grouped;
 
         Ok(grouped_coverage)
     }
@@ -341,9 +341,9 @@ impl std::fmt::Display for Aligner {
 
 
 pub struct VircovAligner {
-    config: AlignerConfig,
-    reference: ReferenceConfig,
-    filter: FilterConfig
+    pub config: AlignerConfig,
+    pub reference: ReferenceConfig,
+    pub filter: FilterConfig
 }
 impl VircovAligner {
     pub fn from(config: AlignerConfig, reference: ReferenceConfig, filter: FilterConfig) -> Self {
@@ -1043,6 +1043,10 @@ impl ReadAlignment {
                 }
                 _ => target_cov_n >= self.filter.min_regions,
             };
+            
+            if target_tags.len() > 0 {
+                println!("Average depth: {}", target_tags.iter().map(|x| x.val).sum::<usize>() /target_tags.len() ); // TODO
+            }
 
             let reads_aligned = targets.len() as u64;
 
@@ -1062,7 +1066,7 @@ impl ReadAlignment {
                     length: target_len,
                     coverage: target_cov,
                     description: target_description,
-                    unique_reads: unique_read_ids,
+                    read_id: unique_read_ids,
                     tags: target_tags,
                 });
                 // For zero count checks below
@@ -1091,7 +1095,7 @@ impl ReadAlignment {
                                 length: record.sequence().len() as u64,
                                 coverage: 0.0,
                                 description: descr,
-                                unique_reads: Vec::new(),
+                                read_id: Vec::new(),
                                 tags: Vec::new(),
                             });
                         }
@@ -1110,7 +1114,7 @@ impl ReadAlignment {
 
             let all_unique_read_ids: Vec<String> = coverage_fields
                 .iter()
-                .flat_map(|field| field.unique_reads.to_owned())
+                .flat_map(|field| field.read_id.to_owned())
                 .unique()
                 .collect();
 
@@ -1124,7 +1128,7 @@ impl ReadAlignment {
 
                 let file_path = output.join(sanitized_name).with_extension("txt");
                 let mut file_handle = File::create(file_path.as_path())?;
-                for read_id in field.unique_reads.iter() {
+                for read_id in field.read_id.iter() {
                     writeln!(file_handle, "{}", &read_id)?
                 }
             }
@@ -1140,7 +1144,7 @@ impl ReadAlignment {
 
             let file_path = output.join(sanitized_name).with_extension("txt");
             let mut file_handle = File::create(file_path.as_path())?;
-            for read_id in field.unique_reads.iter() {
+            for read_id in field.read_id.iter() {
                 writeln!(file_handle, "{}", &read_id)?
             }
         }
