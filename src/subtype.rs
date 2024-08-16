@@ -1994,8 +1994,8 @@ pub fn get_base_file_name(path: &PathBuf) -> Result<String, FileNameError> {
 /// # Examples
 ///
 /// ```
-/// use your_crate::filter_subtype_summaries;
-/// let summaries = vec![your_crate::SubtypeSummary {
+/// use vircov::filter_subtype_summaries;
+/// let summaries = vec![vircov::SubtypeSummary {
 ///     query: "query1".to_string(),
 ///     target: "target1".to_string(),
 ///     target_proteins: Some(10),

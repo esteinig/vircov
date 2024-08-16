@@ -1,6 +1,8 @@
 use clap::{ArgAction, Args, Parser, Subcommand};
 use std::path::PathBuf;
 
+use crate::alignment::AlignmentFormat;
+
 /// Vircov: metagenomic diagnostics for viral genomes
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -12,8 +14,11 @@ pub struct App {
     pub command: Commands,
 }
 
+
 #[derive(Debug, Subcommand)]
 pub enum Commands {
+    /// Alignment with multiple alternative aligners
+    Align(AlignArgs),
     /// Coverage statistics and selections from database alignments
     Coverage(CoverageArgs),
     /// Subtyping of consensus assemblies against curated genotype collections
@@ -28,6 +33,48 @@ pub enum Commands {
     ProcessGisaid(ProcessGisaidArgs),
 }
 
+
+
+
+#[derive(Debug, Args)]
+pub struct AlignArgs {
+    /// Consensus assemblies for subtyping
+    #[clap(long, short = 'i', num_args(0..))]
+    pub input: Vec<PathBuf>,
+    /// Consensus assemblies for subtyping
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+    /// Databases for subtyping
+    #[clap(long, short = 'd')]
+    pub database: PathBuf,
+    /// Threads for Diamond and BLAST
+    #[clap(long, short = 't', default_value = "2")]
+    pub threads: u32,
+    /// Minimum percent nucleotide target coverage
+    #[clap(long, short = 'c', default_value="20")]
+    pub min_cov: f64,
+    /// Minimum percent amino acid target coverage
+    #[clap(long, short = 'a', default_value="0")]
+    pub min_cov_aa: f64,
+    /// Minimum percent shared protein coverage
+    #[clap(long, short = 'p', default_value="0")]
+    pub min_cov_prot: f64,
+    /// Genomic neighbor typing metric to use for inference of genotypes
+    #[clap(long, short = 'm', default_value="ani")]
+    pub metric: String,
+    /// Show the highest number of ranked matches of the selected metric
+    #[clap(long, short = 'r', default_value="5")]
+    pub ranks: usize,
+    /// Show the highest number of ranked matches of the selected metric for reference isolates with genotype annotation
+    #[clap(long, short = 'g',)]
+    pub with_genotype: bool,
+    /// Show the highest number of ranked matches of the selected metric
+    #[clap(long, short = 'w')]
+    pub workdir: Option<PathBuf>,
+    /// Keep directory with working data
+    #[clap(long, short = 'k')]
+    pub keep: bool,
+}
 
 #[derive(Debug, Args)]
 pub struct SubtypeArgs {
@@ -78,7 +125,7 @@ pub struct ProcessGisaidArgs {
     /// Nextstrain clade file (.tsv)
     #[clap(long, short = 'c')]
     pub clades: PathBuf,
-    /// Optinal output segment annotation
+    /// Optional output segment annotation
     #[clap(long, short = 's')]
     pub segment: Option<String>,
     /// Vircov database sequence (db_nuc.fasta) and meta-data (db.csv) output directory
@@ -170,11 +217,9 @@ pub struct CoverageArgs {
     /// extension (bam|sam|cram|paf). This option is used to override that.
     #[clap(
         long,
-        value_name = "bam|paf",
-        ignore_case=true,
-        hide_possible_values=true
+        ignore_case=true
     )]
-    pub alignment_format: Option<String>,
+    pub alignment_format: Option<AlignmentFormat>,
     /// Reference sequences in FASTA format [default: None]
     ///
     /// If the input format is PAF, computation of the total coverage
