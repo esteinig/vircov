@@ -44,7 +44,7 @@ fn main() -> Result<(), VircovError> {
                 &args.output, 
                 args.parallel, 
                 args.remap_threads, 
-                args.consensus, 
+                !args.no_consensus, 
                 args.keep, 
                 None, 
                 None

@@ -95,7 +95,7 @@ pub struct RunArgs {
     pub remap_threads: usize,
     /// Create consensus genome from remapping 
     #[clap(long)]
-    pub consensus: bool,
+    pub no_consensus: bool,
 }
 
 
