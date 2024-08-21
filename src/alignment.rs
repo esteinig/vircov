@@ -1,8 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
-use crate::utils::get_sanitized_fasta_writer;
-use crate::utils::{get_grouped_segments, get_segment_selections};
-use crate::vircov::{AlignerConfig, FilterConfig, ReferenceConfig};
+use crate::vircov::{AlignerConfig, Annotation, AnnotationConfig, FilterConfig, ReferenceConfig};
 
 
 use anyhow::Result;
@@ -11,14 +9,11 @@ use itertools::Itertools;
 use noodles::fasta::{Reader as FastaReader, Record as FastaRecord};
 use ordered_float::OrderedFloat;
 
-#[cfg(feature = "htslib")]
+
 use rust_htslib::bam::ext::BamRecordExtensions;
-#[cfg(feature = "htslib")]
 use rust_htslib::{bam, bam::record::Cigar, bam::HeaderView, bam::Read};
 use std::process::{ChildStdout, Command, Output, Stdio};
-#[cfg(feature = "htslib")]
 use std::str::from_utf8;
-#[cfg(feature = "htslib")]
 use std::convert::TryInto;
 
 use rust_lapper::{Interval, Lapper};
@@ -33,7 +28,12 @@ use std::path::PathBuf;
 
 use tabled::{settings::{Width, Style, object::Columns}, Table, Tabled};
 
-
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, clap::ValueEnum)]
+pub enum SelectHighest {
+    Reads,
+    Coverage, 
+    Alignments
+}
 
 /*
 =====================
@@ -41,15 +41,27 @@ Table display helpers
 =====================
 */
 
-fn display_coverage(cov: &f64) -> String {
+pub fn display_coverage(cov: &f64) -> String {
     format!("{:.4}", cov)
+}
+
+trait IntervalTag {
+    fn as_tag(&self) -> String;
+}
+
+type AlignmentInterval = Interval<usize, usize>;
+
+impl IntervalTag for AlignmentInterval {
+    fn as_tag(&self) -> String {
+        format!("{}:{}:{}", self.start, self.stop, self.val)
+    }
 }
 
 /// A struct for computed output fields
 #[derive(Debug, Clone, PartialEq)]
 pub struct Coverage {
     /// Name of the target sequence
-    pub name: String,
+    pub reference: String,
     /// Number of non-overlapping alignment regions
     pub regions: u64,
     /// Number of unique reads aligned
@@ -64,12 +76,24 @@ pub struct Coverage {
     pub coverage: f64,
     /// Descriptions of the reference sequence headers
     pub description: String,
+    /// Descriptions of the reference sequence headers
+    pub group: Option<String>,
+    /// Descriptions of the reference sequence headers
+    pub segment: Option<String>,
+    /// Descriptions of the reference sequence headers
+    pub name: Option<String>,
     /// Tags for alignment regions in string format
-    pub tags: Vec<Interval<usize, usize>>,
+    pub intervals: Vec<AlignmentInterval>,
     /// Unique read identifiers for grouped operations
     pub read_id: Vec<String>,
 }
 
+impl std::fmt::Display for Coverage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} | {}", self.reference, self.description)?;
+        Ok(())
+    }
+}
 
 
 /// A struct for computed output fields
@@ -91,10 +115,20 @@ pub struct GroupedCoverage {
     pub mean_coverage: f64,
     /// Fractional coverage of the alignments
     pub max_coverage: f64,
-    /// Tags for alignment regions in string format 
+    /// Coverage tags for alignment regions 
     pub coverage: Vec<Coverage>,
     /// Unique read identifiers for grouped operations
     pub read_id: Vec<String>,
+}
+
+impl std::fmt::Display for GroupedCoverage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{} (n = {})", self.group, self.count)?;
+        for cov in &self.coverage {
+            writeln!(f, "{}", cov)?;
+        }
+        Ok(())
+    }
 }
 
 impl GroupedCoverage {
@@ -174,8 +208,8 @@ pub struct CoverageTableFields {
     #[tabled(rename="Description")]
     description: String,
     /// Tags for alignment regions in start:stop:aln format
-    #[tabled(rename="Tags")]
-    tags: String,
+    #[tabled(rename="Intervals")]
+    intervals: String,
 }
 
 impl CoverageTableFields {
@@ -183,15 +217,15 @@ impl CoverageTableFields {
     /// suitable for tabled output
     pub fn from(coverage_fields: &Coverage) -> Self {
         Self {
-            name: coverage_fields.name.clone(),
+            name: coverage_fields.reference.clone(),
             regions: coverage_fields.regions,
             reads: coverage_fields.reads,
             alignments: coverage_fields.alignments,
             bases: coverage_fields.bases,
             length: coverage_fields.length,
-            coverage: coverage_fields.coverage,
+            coverage: coverage_fields.coverage*100.,
             description: coverage_fields.description.clone(),
-            tags: coverage_fields.tags.iter().map(|tag| format!("{}:{}:{}", tag.start, tag.stop, tag.val)).join(" "),
+            intervals: coverage_fields.intervals.iter().map(|interval| interval.as_tag()).join(" "),
         }
     }
 }
@@ -305,8 +339,6 @@ pub enum Aligner {
     Bowtie2,
     #[serde(rename="minimap2")]
     Minimap2,
-    #[serde(rename="minigraph")]
-    Minigraph,
     #[serde(rename="strobealign")]
     Strobealign,
     #[serde(rename="minimap2-rs")]
@@ -319,7 +351,6 @@ impl Aligner {
         match self {
             Aligner::Bowtie2 => "bt",
             Aligner::Minimap2 => "mm",
-            Aligner::Minigraph => "mm",
             Aligner::Strobealign => "st",
             #[cfg(feature = "mm2")]
             Aligner::Minimap2Rs => "mm"
@@ -331,7 +362,6 @@ impl std::fmt::Display for Aligner {
         match self {
             Aligner::Bowtie2 => write!(f, "bowtie2"),
             Aligner::Minimap2 => write!(f, "minimap2"),
-            Aligner::Minigraph => write!(f, "minigraph"),
             Aligner::Strobealign => write!(f, "strobealign"),
             #[cfg(feature = "mm2")]
             Aligner::Minimap2Rs => write!(f, "minimap2-rs"),
@@ -346,15 +376,14 @@ pub struct VircovAligner {
     pub filter: FilterConfig
 }
 impl VircovAligner {
-    pub fn from(config: AlignerConfig, reference: ReferenceConfig, filter: FilterConfig) -> Self {
+    pub fn from(config: &AlignerConfig, reference: &ReferenceConfig, filter: &FilterConfig) -> Self {
         Self {
-            config, reference, filter
+            config: config.clone(), reference: reference.clone(), filter: filter.clone()
         }
     }
     pub fn check_aligner_dependency(&self, aligner: &Aligner) -> Result<(), VircovError> {
         let command = match aligner {
             Aligner::Minimap2 => "minimap2 --version",
-            Aligner::Minigraph => "minigraph --version",
             Aligner::Bowtie2 => "bowtie2 --version",
             Aligner::Strobealign => "strobealign --version",
             #[cfg(feature = "mm2")]
@@ -366,7 +395,6 @@ impl VircovAligner {
     pub fn run_aligner(&self) -> Result<Option<ReadAlignment>, VircovError> {
         match self.config.aligner {
             Aligner::Minimap2 => self.run_minimap2(),
-            Aligner::Minigraph => self.run_minigraph(),
             Aligner::Bowtie2 => self.run_bowtie2(),
             Aligner::Strobealign => self.run_strobealign(),
             #[cfg(feature = "mm2")]
@@ -399,7 +427,7 @@ impl VircovAligner {
 
         let cmd = if self.config.paired_end {
             format!(
-                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' '{}' | samtools view -hF 12 - {output}",
+                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
                 self.config.threads,
                 aligner_args,
                 self.config.index.display(),
@@ -408,7 +436,7 @@ impl VircovAligner {
             )
         } else {
             format!(
-                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' | samtools view -hF 12 - {output}",
+                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
                 self.config.threads,
                 aligner_args,
                 self.config.index.display(),
@@ -430,183 +458,6 @@ impl VircovAligner {
 
         Ok(alignment)
     }
-    fn run_minigraph(&self) -> Result<Option<ReadAlignment>, VircovError> {
-        let aligner_args = self.config.args.as_deref().unwrap_or("");
-        let aligner_preset = self.config.preset.clone().ok_or(VircovError::MissingMinigraphPreset)?;
-
-        let output = match &self.config.output {
-            Some(output) => format!("> {}", output.display()),
-            None => String::from("")
-        };
-
-
-        let cmd = if self.config.paired_end {
-            format!(
-                "minigraph -x {aligner_preset} -t {} {} '{}' '{}' '{}' {output}",
-                self.config.threads,
-                aligner_args,
-                self.config.index.display(),
-                self.config.input[0].display(),
-                self.config.input[1].display()
-            )
-        } else {
-            format!(
-                "minigraph -x {aligner_preset} -t {} {} '{}' '{}' {output}",
-                self.config.threads,
-                aligner_args,
-                self.config.index.display(),
-                self.config.input[0].display()
-            )
-        };
-
-        self.run_command(&cmd)?;
-        
-        let alignment = match &self.config.output {
-            Some(output) => {
-                Some(ReadAlignment::from_paf(
-                    &output, &self.reference, &self.filter
-                )?)
-            },
-            None => None
-        };
-
-        Ok(alignment)
-        
-    }
-    #[cfg(feature = "mm2")]
-    fn run_minimap2_rs(&self) -> Result<(), VircovError> {
-
-        // Implementation is not quite correct as we are essentially collecting the sequences first 
-        // and then push them into a multithreaded alignment step - ideally the alignment threads
-        // should continously read from the sequence reader queues?
-
-        let aligner_preset = self.config.preset.clone().ok_or(VircovError::MissingMinimap2Preset)?;
-        
-        let (sequence_sender, sequence_receiver) = channel::unbounded();
-
-        let aligner = minimap2::Aligner::builder();
-
-        let aligner = match aligner_preset {
-            Preset::Sr => aligner.sr(),
-            Preset::MapOnt => aligner.map_ont(),
-            Preset::LrHq => aligner.lrhq(),
-            Preset::Asm => aligner.asm(),
-            Preset::Asm5 => aligner.asm5(),
-            Preset::Asm10 => aligner.asm10(),
-            Preset::Asm20 => aligner.asm20(),
-            Preset::AvaOnt => aligner.ava_ont(),
-            Preset::AvaPb => aligner.ava_pb(),
-            Preset::MapHifi => aligner.map_hifi(),
-            Preset::MapPb => aligner.map_pb(),
-            Preset::Splice => aligner.splice(),
-            Preset::SpliceHq => aligner.splice_hq(),
-            Preset::Lr => return Err(VircovError::Minimap2PresetNotSupported(Preset::Lr))
-        };
-        
-        let aligner = aligner
-            .with_cigar()
-            .with_index_threads(self.threads)
-            .with_index(
-                self.config.aligner_index.clone().ok_or(
-                    VircovError::MissingAlignmentIndex
-                )?, 
-            None
-        ).map_err(|err| {
-            VircovError::Minimap2RustAlignerBuilderFailed(err.to_string())
-        })?;
-
-        let sequence_sender = Arc::new(Mutex::new(sequence_sender));
-
-        rayon::scope(|s| {
-            
-            let reads_1 = self.input[0].clone();
-            let sequence_sender_clone = Arc::clone(&sequence_sender);
-
-            s.spawn(move |_| {
-
-                if let Err(e) = (|| -> Result<(), VircovError> {
-                    let reader = parse_fastx_file_with_check(&reads_1)?;
-
-                    if let Some(mut reader) = reader {
-                        while let Some(rec) = reader.next() {
-                            let record = rec?;
-                            sequence_sender_clone.lock().unwrap().send(
-                                (get_id(record.id())?, record.seq().to_vec())
-                            ).expect("Failed to send sequence (R1)");
-                        }
-                    } else {
-                        log::warn!("Input file is empty: {}", reads_1.display())
-                    }
-
-                    Ok(())
-
-                })() {
-                    log::error!("Error processing input read file (R1): {:?}", e);
-                }
-            });
-
-            if self.config.paired_end {
-                
-                let reads_2 = self.input[1].clone();
-                let sequence_sender_clone = Arc::clone(&sequence_sender);
-
-                s.spawn(move |_| {
-
-                    if let Err(e) = (|| -> Result<(), VircovError> {
-                        let reader = parse_fastx_file_with_check(&reads_2)?;
-
-                        if let Some(mut reader) = reader {
-                            while let Some(rec) = reader.next() {
-                                let record = rec?;
-                                sequence_sender_clone.lock().unwrap().send(
-                                    (get_id(record.id())?, record.seq().to_vec())
-                                ).expect("Failed to send sequence (R2)");
-                            }
-                        } else {
-                            log::warn!("Input file is empty: {}", reads_2.display())
-                        }
-                        
-                        Ok(())
-
-                    })() {
-                        log::error!("Error processing input read file (R2): {:?}", e);
-                    }
-                });
-            }
-        });
-
-        drop(sequence_sender);
-       
-        let results = rayon::ThreadPoolBuilder::new().num_threads(self.threads).build()?.scope(|_| -> Result<_, VircovError> {
-            let results = sequence_receiver
-                .iter()
-                .collect::<Vec<_>>()
-                .into_par_iter()
-                .map(|(id, sequence)| -> Result<_, VircovError> {
-                    let mappings = aligner.map(&sequence, false, false, None, None).map_err(|err| VircovError::Minimap2RustAlignmentFailed(err.to_string()))?;
-                    if mappings.len() > 0 {
-                        Ok(Some(id))
-                    } else {
-                        Ok(None)
-                    }
-                })
-                .collect::<Vec<_>>();
-                
-            Ok(results)
-        })?;
-
-        let mut read_ids = HashSet::new();
-        for result in results {
-            let result = result?;
-            if let Some(id) = result {
-                read_ids.insert(id);
-            }
-        }
-
-        self.clean_reads(&read_ids)?;
-
-        Ok(())
-    }
     fn run_bowtie2(&self) -> Result<Option<ReadAlignment>, VircovError> {
         let aligner_args = self.config.args.as_deref().unwrap_or("");
 
@@ -615,10 +466,19 @@ impl VircovAligner {
             None => String::from("")
         };
 
+        let index = match self.config.create_index {
+            true => {
+                let index_cmd = format!("bowtie2-build {} {}", self.config.index.display(), self.config.index.display());
+                self.run_command_no_stdout(&index_cmd)?;
+                &self.config.index
+            },
+            false => &self.config.index
+        };
+
         let cmd = if self.config.paired_end {
             format!(
-                "bowtie2 -x '{}' -1 '{}' -2 '{}' --mm -p {} {} | samtools view -hF 12 - {output}",
-                self.config.index.display(),
+                "bowtie2 -x '{}' -1 '{}' -2 '{}' --mm -p {} {} | samtools view -hbF 12 - | samtools sort - {output} ",
+                index.display(),
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
@@ -626,16 +486,15 @@ impl VircovAligner {
             )
         } else {
             format!(
-                "bowtie2 -x '{}' -U '{}' --mm -p {} {} | samtools view -hF 12 - {output}",
-                self.config.index.display(),
+                "bowtie2 -x '{}' -U '{}' --mm -p {} {} | samtools view -hbF 12 - | samtools sort - {output}",
+                index.display(),
                 self.config.input[0].display(),
                 self.config.threads,
                 aligner_args,
             )
         };
+
         self.run_command(&cmd)?;
-
-
 
         let alignment = match &self.config.output {
             Some(output) => {
@@ -659,7 +518,7 @@ impl VircovAligner {
 
         let cmd = if self.config.paired_end {
             format!(
-                "strobealign -t {} {} '{}' '{}' '{}' | samtools view -hF 12 - {output}",
+                "strobealign -t {} {} '{}' '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
                 self.config.threads,
                 aligner_args,
                 self.config.index.display(),
@@ -668,7 +527,7 @@ impl VircovAligner {
             )
         } else {
             format!(
-                "strobealign -t {} {} '{}' '{}' | samtools view -hF 12 - {output}",
+                "strobealign -t {} {} '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
                 self.config.threads,
                 aligner_args,
                 self.config.index.display(),
@@ -705,33 +564,22 @@ impl VircovAligner {
 
         Ok(())
     }
-
-    fn run_command_stdout_paf(&self, cmd: &str) -> Result<ReadAlignment, VircovError> {
+    fn run_command_no_stdout(&self, cmd: &str) -> Result<(), VircovError> {
         log::debug!("Running command: {}", cmd);
 
-        let mut child = Command::new("sh")
+        let status = Command::new("sh")
             .arg("-c")
             .arg(cmd)
-            .stdout(Stdio::piped())
+            .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
+            .status()
             .map_err(|e| VircovError::CommandExecutionFailed(cmd.to_string(), e.to_string()))?;
-
-        let stdout = child.stdout.take().ok_or_else(|| {
-            VircovError::CommandExecutionFailed(cmd.to_string(), "Failed to capture stdout".to_string())
-        })?;
-
-        let alignment = ReadAlignment::from_paf_stdout(
-            stdout, &self.reference, &self.filter
-        )?;
-
-        let status = child.wait().map_err(|e| VircovError::CommandExecutionFailed(cmd.to_string(), e.to_string()))?;
 
         if !status.success() {
             return Err(VircovError::CommandFailed(cmd.to_string(), status.code().unwrap_or(-1)));
         }
 
-        Ok(alignment)
+        Ok(())
     }
 
 }
@@ -739,16 +587,12 @@ impl VircovAligner {
 /// Paf struct
 #[derive(Debug, Clone)]
 pub struct ReadAlignment {
+    pub target_intervals: TargetIntervals,
+    pub target_sequences: Option<HashMap<String, FastaRecord>>,
+    pub target_exclude: Option<Vec<String>>,
     pub reference: ReferenceConfig,
     pub filter: FilterConfig,
-    /// PafRecords parsed from file (PAF)
-    pub target_intervals: TargetIntervals,
-    /// Reference sequence names and lengths from file (FASTA)
-    pub target_sequences: Option<HashMap<String, FastaRecord>>,
-    /// Reference sequence description strings to exclude
-    pub target_exclude: Option<Vec<String>>,
 }
-
 impl ReadAlignment {
     pub fn new(
         target_intervals: TargetIntervals,
@@ -765,11 +609,11 @@ impl ReadAlignment {
         )?;
 
         Ok(Self {
-            reference: reference.clone(),
-            filter: filter.clone(),
             target_intervals,
             target_sequences,
             target_exclude,
+            reference: reference.clone(),
+            filter: filter.clone(),
         })
     }
     pub fn from(
@@ -783,7 +627,7 @@ impl ReadAlignment {
                 AlignmentFormat::Paf | AlignmentFormat::Gaf => ReadAlignment::from_paf(
                     alignment, reference, filter
                 ),
-                #[cfg(feature = "htslib")]
+                
                 AlignmentFormat::Sam | AlignmentFormat::Bam | 
                 AlignmentFormat::Cram  => ReadAlignment::from_bam(
                     alignment, reference, filter
@@ -802,7 +646,7 @@ impl ReadAlignment {
                 Some(Some("gaf.bz")) | Some(Some("gaf.bz2")) => ReadAlignment::from_paf(
                     alignment, reference, filter
                 ),
-                #[cfg(feature = "htslib")]
+                
                 Some(Some("sam")) | Some(Some("bam")) | Some(Some("cram")) => ReadAlignment::from_bam(
                     alignment, reference, filter
                 ),
@@ -899,7 +743,7 @@ impl ReadAlignment {
 
         Self::new(target_lappers, reference, filter)
     }
-    #[cfg(feature = "htslib")]
+    
     pub fn from_bam(
         path: &PathBuf,
         reference: &ReferenceConfig,
@@ -911,6 +755,7 @@ impl ReadAlignment {
         } else {
             bam::Reader::from_path(path)?
         };
+        
 
         let header_view = reader.header().to_owned();
 
@@ -959,6 +804,7 @@ impl ReadAlignment {
     /// Compute coverage distribution by target sequence
     pub fn coverage(
         &self,
+        annotation_config: &AnnotationConfig,
         tags: bool,
         zero: bool,
     ) -> Result<Vec<Coverage>, VircovError> {
@@ -1027,38 +873,36 @@ impl ReadAlignment {
 
             let unique_reads_n = unique_read_ids.len() as u64;
 
-            let region_filter_passed: bool = match self.filter.min_regions_coverage {
+            let region_filter_passed: bool = match self.filter.min_scan_regions_coverage {
                 Some(reg_cov_threshold) => {
                     // Apply the region filter only if the reference sequence
                     // coverage is below a coverage threshold - only apply this if
                     // the threshold is bigger than zero so that pipelines can still
                     // apply the option with a 0 value
                     if (reg_cov_threshold > 0.) && (target_cov < reg_cov_threshold) {
-                        target_cov_n >= self.filter.min_regions
+                        target_cov_n >= self.filter.min_scan_regions
                     } else {
-                        // otherwise, if coverage is above the threshold, do
+                        // Otherwise, if coverage is above the threshold, do
                         // not apply the region filter
                         true
                     }
                 }
-                _ => target_cov_n >= self.filter.min_regions,
+                _ => target_cov_n >= self.filter.min_scan_regions,
             };
-            
-            if target_tags.len() > 0 {
-                println!("Average depth: {}", target_tags.iter().map(|x| x.val).sum::<usize>() /target_tags.len() ); // TODO
-            }
 
+            let annotation = Annotation::from(&target_description, annotation_config);
+            
             let reads_aligned = targets.len() as u64;
 
             if target_len >= self.filter.min_reference_length
-                && reads_aligned >= self.filter.min_alignments
+                && reads_aligned >= self.filter.min_scan_alignments
                 && region_filter_passed
-                && target_cov >= self.filter.min_coverage
-                && unique_reads_n >= self.filter.min_unique_reads
+                && target_cov >= self.filter.min_scan_coverage
+                && unique_reads_n >= self.filter.min_scan_reads
                 && !exclude_target_sequence
             {
                 coverage_fields.push(Coverage {
-                    name: target_name.to_owned(),
+                    reference: target_name.to_owned(),
                     regions: target_cov_n,
                     reads: unique_reads_n,
                     alignments: reads_aligned,
@@ -1066,8 +910,11 @@ impl ReadAlignment {
                     length: target_len,
                     coverage: target_cov,
                     description: target_description,
+                    group: annotation.group,
+                    segment: annotation.segment,
+                    name: annotation.name,
                     read_id: unique_read_ids,
-                    tags: target_tags,
+                    intervals: target_tags,
                 });
                 // For zero count checks below
                 included_references.push(target_name.to_owned())
@@ -1082,12 +929,16 @@ impl ReadAlignment {
                 Some(ref_seqs) => {
                     for (ref_seq, record) in ref_seqs.iter() {
                         if !included_references.contains(ref_seq) {
+                            
                             let descr = match record.description() {
                                 None => "-".to_string(),
                                 Some(descr) => descr.to_owned(),
                             };
+
+                            let annotation = Annotation::from(&descr, annotation_config);
+
                             coverage_fields.push(Coverage {
-                                name: ref_seq.to_owned(),
+                                reference: ref_seq.to_owned(),
                                 regions: 0,
                                 reads: 0,
                                 alignments: 0,
@@ -1095,8 +946,11 @@ impl ReadAlignment {
                                 length: record.sequence().len() as u64,
                                 coverage: 0.0,
                                 description: descr,
+                                group: annotation.group,
+                                segment: annotation.segment,
+                                name: annotation.name,
                                 read_id: Vec::new(),
-                                tags: Vec::new(),
+                                intervals: Vec::new(),
                             });
                         }
                     }
@@ -1124,7 +978,7 @@ impl ReadAlignment {
         } else {
             std::fs::create_dir_all(&output)?;
             for field in coverage_fields.iter() {
-                let sanitized_name = field.name.replace(' ', "__");
+                let sanitized_name = field.reference.replace(' ', "__");
 
                 let file_path = output.join(sanitized_name).with_extension("txt");
                 let mut file_handle = File::create(file_path.as_path())?;
@@ -1153,12 +1007,10 @@ impl ReadAlignment {
     /// Print the coverage statistics to console, alternatively in pretty table format
     pub fn select_references(
         &self,
-        grouped_coverage: Vec<GroupedCoverage>, // If grouped, these are grouped fields
-        group_sep: String,
-        select_by: String,
+        grouped_coverage: &Vec<GroupedCoverage>, // If grouped, these are grouped fields
+        select_by: SelectHighest,
         outdir: Option<PathBuf>,
-        segment_field: Option<String>,
-        segment_field_nan: Option<String>,
+        annotation_config: &AnnotationConfig,
     ) -> Result<HashMap<String, Vec<Coverage>> , VircovError> {
         
         let reference_sequences = self.target_sequences.as_ref().ok_or(VircovError::GroupSequenceError)?;
@@ -1169,79 +1021,104 @@ impl ReadAlignment {
 
         let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
 
+
         for group_coverage in grouped_coverage {
 
-            let segmented = match segment_field.clone() {
-                Some(seg_field) => match segment_field_nan.clone() {
-                    Some(seg_field_nan) => {
-                        let segment_tag_count =
-                            group_coverage.coverage.iter().map(|cov| cov.description.matches(&seg_field)).count();
-                        let segment_tag_na_count =
-                            group_coverage.coverage.iter().map(|cov| cov.description.matches(&seg_field_nan)).count();
-                        (segment_tag_count > 0)
-                            && (segment_tag_na_count != segment_tag_count)
-                    }
-                    None => return Err(VircovError::SegmentFieldNaNError),
-                },
-                None => false,
-            };
+            let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
 
-            // Filter reference sequences (contained in tags) by highest number of mapped reads or coverage
+            for cov in &group_coverage.coverage {
+
+                if let Some(segment) = &cov.segment {
+
+                    if segment != annotation_config.segment_na.as_ref().ok_or(VircovError::NoSegmentFieldProvided)? {
+                        match grouped_segments.entry(segment.clone()) {
+                            Entry::Occupied(mut entry) => {
+                                entry.get_mut().push(cov.clone());
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(vec![cov.clone()]);
+                            }
+                        }
+                    }
+                    
+                }
+
+            }
+
+            let segmented = !grouped_segments.is_empty();
+
+            // Filter reference sequences (contained in tags) by highest number of (unique) reads, alignments or coverage
+
             if segmented {
 
-                // If the grouped sequences are segmented, group unique segments (from identifier)
-                // and select the best segment of each group based on the group_select_by metric
-                let grouped_segments = get_grouped_segments(
-                    group_coverage.coverage,
-                    segment_field.clone(),
-                    group_sep.clone(),
-                )?;
+                let mut selected_segments: BTreeMap<String, Coverage> = BTreeMap::new();
 
-                let grouped_segment_selections = get_segment_selections(
-                    grouped_segments,
-                    select_by.clone()
-                )?;
+                for (segment, cov_fields) in grouped_segments {
+                    let selected = match select_by {
+                        SelectHighest::Reads => cov_fields.iter().max_by_key(|x| x.reads),
+                        SelectHighest::Coverage => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                        SelectHighest::Alignments => cov_fields.iter().max_by_key(|x| x.alignments)
+                    };
+
+                    match selected {
+                        Some(selected) => {
+                            selected_segments
+                                .entry(segment)
+                                .or_insert_with(|| selected.clone());
+                        }
+                        None => return Err(VircovError::GroupSelectReference),
+                    }
+                }
 
                 if let Some(path) = &outdir {
-                    let mut writer = get_sanitized_fasta_writer(&group_coverage.group, &path)
-                        .expect("Could not get sanitized writer for segment multi-FASTA");
 
-                    for (_, segment_field) in grouped_segment_selections {
-                        let seq = &reference_sequences[&segment_field.name];
+                    let file_handle = std::fs::File::create(
+                        path.join(
+                            format!("{}.fasta", group_coverage.group)
+                        )
+                    )?;
+                    let mut writer = noodles::fasta::Writer::new(file_handle);
+
+                    for (_, segment_cov) in selected_segments {
+                        let seq = &reference_sequences[&segment_cov.reference];
                         writer.write_record(seq)?;
                         
                         selected_reference_coverage.entry(group_coverage.group.clone())
-                            .and_modify(|x| x.push(segment_field.clone()))
-                            .or_insert(vec![segment_field]);
+                            .and_modify(|x| x.push(segment_cov.clone()))
+                            .or_insert(vec![segment_cov]);
                     }
                 } else {
-                    for (_, segment_field) in grouped_segment_selections {
+                    for (_, segment_cov) in selected_segments {
                         selected_reference_coverage.entry(group_coverage.group.clone())
-                            .and_modify(|x| x.push(segment_field.clone()))
-                            .or_insert(vec![segment_field]);
+                            .and_modify(|x| x.push(segment_cov.clone()))
+                            .or_insert(vec![segment_cov]);
                     }
                 }
-                
+
             } else {
 
                 // If not segmented, simply select the best reference sequence using the
                 // group_select_by metric and select the sequence from the header fields
                 // to write to FASTA
-                let max = match select_by.as_str() {
-                    "reads" => group_coverage.coverage.iter().max_by_key(|x| x.reads),
-                    "coverage" => {
-                        group_coverage.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage))
-                    }
-                    _ => return Err(VircovError::GroupSelectByError),
+
+                let max = match select_by {
+                    SelectHighest::Reads => group_coverage.coverage.iter().max_by_key(|x| x.reads),
+                    SelectHighest::Coverage => group_coverage.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                    SelectHighest::Alignments => group_coverage.coverage.iter().max_by_key(|x| x.alignments)
                 };
 
                 match max {
                     Some(field) => {
-                        let seq = &reference_sequences[&field.name];
+                        let seq = &reference_sequences[&field.reference];
 
                         if let Some(path) = &outdir {
-                            let mut writer = get_sanitized_fasta_writer(&group_coverage.group, &path)
-                                .expect("Could not get sanitized writer for single FASTA");
+                            
+                            let file_handle = std::fs::File::create(
+                                path.join(
+                                    format!("{}.fasta", group_coverage.group)
+                                )
+                            )?;
+                            let mut writer = noodles::fasta::Writer::new(file_handle);
                             writer.write_record(seq)?;
                         }
 
@@ -1257,31 +1134,29 @@ impl ReadAlignment {
 
         Ok(selected_reference_coverage)
     }
-    pub fn write_table(
-        &self,
-        coverage_fields: &[Coverage],
-        table: bool,
-        header: bool,
-        file: Option<PathBuf>,
-    ) -> Result<(), VircovError> {
-        match table {
-            true => {
-                let table_fields = coverage_fields
-                    .iter()
-                    .map(CoverageTableFields::from)
-                    .collect::<Vec<CoverageTableFields>>();
-                let mut _table = Table::new(table_fields);
-                
-                _table.modify(Columns::new(7..), Width::wrap(32).keep_words()).with(Style::modern());
+    pub fn print_table(coverage: &mut [Coverage], sort: bool) {
 
-                println!("{}", _table);
-                Ok(())
-            }
-            false => {
-               
-               Ok(())
-            }
+        if sort {
+            coverage.sort_by(|a, b| {
+                b.coverage.partial_cmp(&a.coverage)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
+        let table_fields = coverage
+            .iter()
+            .map(CoverageTableFields::from)
+            .collect::<Vec<CoverageTableFields>>();
+        
+        let mut table = Table::new(table_fields);
+    
+        table.modify(
+            Columns::new(7..), 
+            Width::wrap(32).keep_words()
+        ).with(
+            Style::modern()
+        );
+
+        println!("{}", table);
     }
     /// Print the coverage distributions to console as a text-based coverage plot
     pub fn coverage_plots(
@@ -1302,7 +1177,7 @@ impl ReadAlignment {
 
             if coverage
                 .iter()
-                .map(|x| &x.name)
+                .map(|x| &x.reference)
                 .any(|x| x == target_name)
             {
                 let covplot = CovPlot::new(targets, target_len, max_width)?;
@@ -1316,24 +1191,21 @@ impl ReadAlignment {
         &self,
         coverage: &[Coverage],
         group_by: String,
-        group_sep: String,
     ) -> Result<Vec<GroupedCoverage>, VircovError> {
         let mut coverage_groups: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
 
-        for cov_field in coverage {
-            let groups = cov_field.description.split(&group_sep);
-
-            for group in groups {
-                if group.contains(&group_by) {
-                    match coverage_groups.entry(group.to_string()) {
-                        Entry::Occupied(mut entry) => {
-                            entry.get_mut().push(cov_field);
-                        }
-                        Entry::Vacant(entry) => {
-                            entry.insert(vec![cov_field]);
-                        }
+        for cov in coverage {
+            if let Some(group) = &cov.group {
+                match coverage_groups.entry(group.to_string()) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().push(cov);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(vec![cov]);
                     }
                 }
+            } else {
+                return Err(VircovError::GroupAnnotationMissing(cov.reference.to_owned()))
             }
         }
 
@@ -1361,7 +1233,7 @@ Alignment records
 =================
 */
 
-#[cfg(feature = "htslib")]
+
 /// Return the query alignment length from a CIGAR string
 /// as the sum of all matches (M) and insertions (I).
 ///
@@ -1378,7 +1250,7 @@ fn qalen_from_cigar<'a>(cigar: impl Iterator<Item = &'a Cigar>) -> u32 {
         .sum()
 }
 
-#[cfg(feature = "htslib")]
+
 #[derive(Debug, Clone)]
 pub struct BamRecord {
     /// Query sequence name.
@@ -1397,7 +1269,7 @@ pub struct BamRecord {
     pub mapq: u8,
 }
 
-#[cfg(feature = "htslib")]
+
 impl BamRecord {
     /// Create a new (reduced) BamRecord from a BAM HTS LIB record
     pub fn from(record: &bam::Record, header: &HeaderView) -> Result<Self, VircovError> {

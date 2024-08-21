@@ -1,9 +1,9 @@
-use crate::alignment::ReadAlignment;
 use crate::error::VircovError;
 use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
 use crate::subtype::SubtypeDatabase;
 use crate::subtype::SubtypeSummary;
+use crate::vircov::{Vircov, VircovConfig};
 
 use rayon::prelude::*;
 use anyhow::Result;
@@ -20,6 +20,7 @@ mod subtype;
 mod terminal;
 mod utils;
 mod vircov;
+mod consensus;
 
 /// Vircov application
 ///
@@ -27,151 +28,48 @@ mod vircov;
 /// by the command-line interface
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), VircovError> {
-    use std::fs::remove_file;
-
-    use alignment::{Coverage, VircovAligner};
-    use utils::get_sanitized_fasta_writer;
-    use vircov::{AlignerConfig, FilterConfig, ReferenceConfig};
-
 
     init_logger();
 
     let terminal = App::parse();
 
     match &terminal.command {
-        Commands::Align(args) => {
+        Commands::Run(args) => {
 
-            let aligner = VircovAligner::from(
-                AlignerConfig::default(), 
-                ReferenceConfig::default(), 
-                FilterConfig::default()
-            );
+            let config = VircovConfig::from_run_args(args)?;
 
-            aligner.check_aligner_dependency(&aligner.config.aligner)?;
+            let vircov = Vircov::from(config);
 
-            aligner.run_aligner()?;
-        }
-        Commands::Coverage(args) => {
-
-            let align = ReadAlignment::from(
-                &args.alignment, 
-                &ReferenceConfig::default(), 
-                &FilterConfig::default(), 
+            vircov.run(
+                &args.output, 
+                args.parallel, 
+                args.remap_threads, 
+                args.consensus, 
+                args.keep, 
+                None, 
                 None
             )?;
+        },
+        Commands::Coverage(args) => {
 
-            let coverage: Vec<Coverage> = align.coverage(false, args.zero)?;
-            
-            let grouped_coverage = align.group_coverage(
-                &coverage, 
-                args.group_by.clone().unwrap(), 
-                args.group_sep.clone()
-            )?;
+            // let align = ReadAlignment::from(
+            //     &args.alignment, 
+            //     &ReferenceConfig::default(), 
+            //     &FilterConfig::default(), 
+            //     None
+            // )?;
 
+            // let annotation_options = AnnotationOptions::virosaurus();
 
-
-            let group_selections = align.select_references(
-                grouped_coverage, 
-                args.group_sep.clone(), 
-                args.group_select_by.clone().unwrap(), 
-                args.group_select_split.clone(), 
-                args.segment_field.clone(), 
-                args.segment_field_nan.clone()
-            )?;
-
-
-            let outdir = PathBuf::from(".");
-            let refs = align.clone().target_sequences.unwrap();
-
-            
-            let mut remap_coverage: Result<Vec<Vec<Coverage>>, VircovError> = Ok(Vec::new());
-
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(4)
-                .build()
-                .expect("Failed to create thread pool")
-                .install(|| -> Result<(), VircovError> {
-                    remap_coverage = group_selections
-                        .into_par_iter()
-                        .map(|(group, coverage)| -> Result<Vec<Coverage>, VircovError> {
-                            log::info!("{group}");
-                            // log::info!("{:#?}", coverage);
-
-                            let remap_id = &uuid::Uuid::new_v4().to_string();
-
-                            let remap_aligner = VircovAligner::from(
-                                AlignerConfig::remap(&remap_id),
-                                ReferenceConfig::default(),
-                                FilterConfig::default(),
-                            );
-
-                            let refseqs: Vec<&noodles::fasta::Record> = coverage
-                                .iter()
-                                .map(|ref_cov| {
-                                    refs.get(&ref_cov.name)
-                                        .ok_or(VircovError::AlignmentInputFormatInvalid)
-                                })
-                                .collect::<Result<_, _>>()?;
-                            
-                            let sam = outdir.join(remap_id).with_extension("sam");
-                            let remap_reference = outdir.join(remap_id).with_extension("fasta");
-
-                            let mut writer = get_sanitized_fasta_writer(remap_id, &outdir)
-                                .expect("Could not get sanitized writer for FASTA");
-
-                            for seq in refseqs {
-                                writer.write_record(seq).expect("Failed to write record");
-                            }
-
-                            let alignment = remap_aligner.run_aligner()?.unwrap();
-
-                            let remap_coverage = alignment.coverage(true, args.zero)?;
-
-                            // log::info!("Remap coverage: {:#?}", remap_coverage);
-
-                            for cov in &remap_coverage {
-                                if cov.coverage > 0.01 {
-                                    let refseq = refs.get(&cov.name)
-                                        .ok_or(VircovError::AlignmentInputFormatInvalid)?;
-                                    
-                                    let sam_alignment = sam.clone();
-
-
-                                }
-                            }
-
-
-                            remove_file(sam)?;
-                            remove_file(remap_reference)?;
-
-                            Ok(remap_coverage)
-                        })
-                        .collect();
-                    Ok(())
-                })?;
-
-            match remap_coverage {
-                Ok(coverage) => {
-                    // Use your remapped coverage vector
-                    // log::info!("{:#?}", coverage);
-                }
-                Err(e) => {
-                    // Handle the error
-                    eprintln!("Error: {:?}", e);
-                }
-            }
-        
-           
-            println!("{:?}", coverage);
-    
-
-            match args.covplot {
-                true => align.coverage_plots(&coverage, args.width)?,
-                false => {}
-            }
-
+            // let coverage: Vec<Coverage> = align.coverage(&annotation_options, false, args.zero)?;
+               
+            // match args.covplot {
+            //     true => align.coverage_plots(&coverage, args.width)?,
+            //     false => {}
+            // }
 
         }
+        Commands::Abundance(args) => {},
         Commands::Subtype(args) => {
 
             let subtype_db = SubtypeDatabase::from(&args.database, &args.workdir)?;

@@ -1,16 +1,33 @@
 use thiserror::Error;
 
-use crate::alignment::Aligner;
+use crate::{alignment::Aligner, consensus::ConsensusAssembler};
 
 #[derive(Error, Debug)]
 pub enum VircovError {
     #[error("Subtype database error")]
     SubtypeDatabase(#[from] crate::subtype::SubtypeDatabaseError),
+
+    /// Represents all other cases of `csv::Error`.
+    #[error(transparent)]
+    CsvError(#[from] csv::Error),
+    /// Represents all other cases of `std::io::Error`.
     #[error(transparent)]
     IOError(#[from] std::io::Error),
     /// Represents all other cases of `niffler::Error`.
     #[error(transparent)]
     NifflerError(#[from] niffler::Error),
+    /// Represents all other cases of `needletail::errors::ParseError`.
+    #[error(transparent)]
+    NeedletailParseError(#[from] needletail::errors::ParseError),
+    
+    #[error("Failed to convert OsString to String")]
+    FileNameConversionError,
+    #[error("Failed to extract the taxonomic identifier annotation")]
+    ExtractTaxidAnnotation,
+
+    /// Represents an error when no aligner is configured.
+    #[error("Grouping activated but no group annotation found in reference sequence: {0}")]
+    GroupAnnotationMissing(String),
     
     /// Represents an error when a command execution fails.
     #[error("Failed to execute command '{0}': {1}")]
@@ -43,7 +60,19 @@ pub enum VircovError {
     /// Represents an error when no preset is configured.
     #[error("Minigraph was set as aligner but no preset was configured.")]
     MissingMinigraphPreset,
+    /// Represents an error when the aligner output was misconfigured in the run pipeline
+    #[error("Aligner output was misconfigured to 'stdout' - read alignment not returned.")]
+    AlignerStdoutMisconfigured,
+    /// Represents an error when the segment field was misconfigured in the reference select method
+    #[error("Segments found but no segment field provided - please raise a bug issue.")]
+    NoSegmentFieldProvided,
+    /// Represents an error when the specified consensus assembler cannot be executed, possibly due to it not being installed.
+    #[error("Consensus assembler `{0}` cannot be executed - is it installed?")]
+    ConsensusDependencyMissing(ConsensusAssembler),
 
+    /// Represents an error when a sequence record identifier could not be parsed
+    #[error("Consensus record identifier could not be parsed")]
+    NeedltailRecordIdentifierNotParsed,
     /// Indicates failure to read file from command line option
     #[error("failed to read file from option")]
     FileInputError,
@@ -97,5 +126,25 @@ pub enum VircovError {
     /// Indicates failure when zero-value reference sequences should be included, but no reference sequences were provided
     #[error("no reference sequences found, zero-value records cannot be included")]
     ZeroReferenceSequences,
+
+    // Indicates failure to find a matching scan record for a remap record - 
+    /// remap records should always subsets of scan records
+    #[error("failed get a matching remap record for the scan record of reference: {0}")]
+    RemapMatchingScanRecordNotFound(String),
+    /// Indicates failure to assign a consensus sequence to the alignment result,
+    /// likely due to not accounting for segmentation (and aligning + building
+    /// the consensus sequnces for each segment in the pipeline)
+    #[error("multiple consensus sequences found for reference: {0}")]
+    ConsensusSequenceMatchNotIdentifiable(String),
+    /// Indicates failure to assign a remap result to a single scan result,
+    /// likely due to not accounting for segmentation (and aligning + building
+    /// the consensus sequnces for each segment in the pipeline)
+    #[error("multiple remap references found for reference: {0}")]
+    RemapMatchNotIdentifiable(String),
+    /// Indicates failure to assign a coverage result to a single scan result,
+    /// likely due to not accounting for segmentation (and aligning + building
+    /// the consensus sequnces for each segment in the pipeline)
+    #[error("multiple coverage references found for reference: {0}")]
+    CoverageMatchNotIdentifiable(String),
     
 }

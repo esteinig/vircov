@@ -5,3 +5,4 @@ pub mod subtype;
 pub mod terminal;
 pub mod utils;
 pub mod vircov;
+pub mod consensus;
