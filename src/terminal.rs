@@ -33,6 +33,8 @@ pub enum Commands {
     ProcessNcbi(ProcessNcbiArgs),
     /// Process GISAID and Nextstrain files to attempt genotype extraction
     ProcessGisaid(ProcessGisaidArgs),
+    /// Concatenate run output tables
+    Concat(ConcatArgs),
 }
 
 #[derive(Debug, Args)]
@@ -45,6 +47,9 @@ pub struct RunArgs {
     /// input arguments, for example: '-i R1.fq.gz -i R2.fq.gz' or '-i R1.fq.gz R2.fq.gz'
     #[arg(short, long, num_args(0..))]
     pub input: Vec<PathBuf>,
+    /// Output summary table of coverage and assembly metrics
+    #[arg(short, long, default_value="results.tsv")]
+    pub output: PathBuf,
     /// Reference index for aligner
     ///
     /// Depending on whether --aligner is chosen, the index is an alignment index 
@@ -55,14 +60,11 @@ pub struct RunArgs {
     #[arg(long, short='R', default_value="reference.fasta")]
     pub reference: Option<PathBuf>,
     /// Aligner
-    #[arg(long, short='a', default_value="minimap2")]
+    #[arg(long, short='A', default_value="minimap2")]
     pub aligner: Aligner,
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
-    /// Output summary table of coverage and assembly metrics
-    #[arg(short, long, default_value="results.tsv")]
-    pub output: PathBuf,
     /// Group alignments by a field in the reference sequence description
     #[clap(long, short = 'g', long, default_value="taxid=")]
     pub group_by: Option<String>,
@@ -81,6 +83,9 @@ pub struct RunArgs {
     /// Keep directory with working data
     #[clap(long, short = 'k')]
     pub keep: bool,
+    /// Print formatted table to console
+    #[clap(long, short = 'T')]
+    pub table: bool,
     // Segment field to identify segments in grouped alignments
     #[clap(long, default_value="segment=")]
     pub segment_field: Option<String>,
@@ -93,6 +98,9 @@ pub struct RunArgs {
     /// Threads for remapping alignment
     #[clap(long, default_value = "2")]
     pub remap_threads: usize,
+    /// Include secondary alignments
+    #[clap(long)]
+    pub secondary: bool,
     /// Create consensus genome from remapping 
     #[clap(long)]
     pub no_consensus: bool,
@@ -103,6 +111,53 @@ pub struct RunArgs {
 
 #[derive(Debug, Args)]
 pub struct CoverageArgs {
+    /// Input read files (can be compressed with .gz)
+    ///
+    /// One or two input read files. These files can be in gzipped format.
+    /// This parameter is required and multiple files can be specified (1 for long
+    /// reads or 2 for paired-end short reads) either consecutively or using multiple
+    /// input arguments, for example: '-i R1.fq.gz -i R2.fq.gz' or '-i R1.fq.gz R2.fq.gz'
+    #[arg(short, long, num_args(0..))]
+    pub input: Vec<PathBuf>,
+    /// Output summary table of coverage metrics
+    #[arg(short, long, default_value="results.tsv")]
+    pub output: PathBuf,
+    /// Reference index for aligner
+    ///
+    /// Depending on whether --aligner is chosen, the index is an alignment index 
+    /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
+    #[arg(long, short='I', default_value="reference.fasta")]
+    pub index: PathBuf,
+    /// Reference sequences used in aligner ()
+    #[arg(long, short='R', default_value="reference.fasta")]
+    pub reference: Option<PathBuf>,
+    /// Aligner
+    #[arg(long, short='A', default_value="minimap2")]
+    pub aligner: Aligner,
+    /// Aligner preset (minimap2)
+    #[arg(long, short='P', default_value="sr")]
+    pub preset: Option<Preset>,
+    /// Working directory
+    #[clap(long, short = 'w', default_value = ".")]
+    pub workdir: Option<PathBuf>,
+    /// Keep directory with working data
+    #[clap(long, short = 'k')]
+    pub keep: bool,
+    /// Print formatted table to console
+    #[clap(long, short = 'T')]
+    pub table: bool,
+    /// Threads for alignment
+    #[clap(long, short = 't', default_value = "4")]
+    pub threads: usize,
+    /// Include secondary alignments
+    #[clap(long)]
+    pub secondary: bool,
+    /// Include interval alignments in output
+    #[arg(long)]
+    pub intervals: bool,
+    /// Include references without alignment
+    #[arg(long)]
+    pub zero: bool,
 }
 
 #[derive(Debug, Args)]
@@ -172,6 +227,17 @@ pub struct ProcessNcbiArgs {
     #[clap(long, short = 'v')]
     pub virus: String,
     /// Vircov database meta data file 
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+}
+
+
+#[derive(Debug, Args)]
+pub struct ConcatArgs {
+    /// Vircov run output table
+    #[clap(long, short = 'i', num_args(0..))]
+    pub input: Vec<PathBuf>,
+    /// Concatenated output file
     #[clap(long, short = 'o')]
     pub output: PathBuf,
 }

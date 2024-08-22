@@ -3,7 +3,7 @@ use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
 use crate::subtype::SubtypeDatabase;
 use crate::subtype::SubtypeSummary;
-use crate::vircov::{Vircov, VircovConfig};
+use crate::vircov::{Vircov, VircovConfig, VircovSummary};
 
 use rayon::prelude::*;
 use anyhow::Result;
@@ -29,6 +29,7 @@ mod consensus;
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), VircovError> {
 
+
     init_logger();
 
     let terminal = App::parse();
@@ -37,8 +38,7 @@ fn main() -> Result<(), VircovError> {
         Commands::Run(args) => {
 
             let config = VircovConfig::from_run_args(args)?;
-
-            let vircov = Vircov::from(config);
+            let vircov = Vircov::from(config)?;
 
             vircov.run(
                 &args.output, 
@@ -46,28 +46,26 @@ fn main() -> Result<(), VircovError> {
                 args.remap_threads, 
                 !args.no_consensus, 
                 args.keep, 
+                args.table,
                 None, 
                 None
             )?;
+
         },
         Commands::Coverage(args) => {
+            
+            let config = VircovConfig::from_coverage_args(args)?;
+            let vircov = Vircov::from(config)?;
 
-            // let align = ReadAlignment::from(
-            //     &args.alignment, 
-            //     &ReferenceConfig::default(), 
-            //     &FilterConfig::default(), 
-            //     None
-            // )?;
-
-            // let annotation_options = AnnotationOptions::virosaurus();
-
-            // let coverage: Vec<Coverage> = align.coverage(&annotation_options, false, args.zero)?;
-               
-            // match args.covplot {
-            //     true => align.coverage_plots(&coverage, args.width)?,
-            //     false => {}
-            // }
-
+            vircov.run_coverage(
+                &args.output, 
+                args.intervals, 
+                args.zero, 
+                args.table,
+                None, 
+                None
+            )?;
+            
         }
         Commands::Abundance(args) => {},
         Commands::Subtype(args) => {
@@ -147,6 +145,7 @@ fn main() -> Result<(), VircovError> {
             
             let db_file = args.outdir.join("db.csv");
             let db_nuc_file = args.outdir.join("db_nuc.fasta");
+
             subtype::process_gisaid_genotypes(&args.clades, &args.fasta, db_nuc_file, db_file, args.segment.as_deref())?;
         }
         Commands::FilterDatabase(args) => {
@@ -176,6 +175,9 @@ fn main() -> Result<(), VircovError> {
         }
         Commands::ValidateGenotypes(args) => {
             subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
+        }
+        Commands::Concat(args) => {
+            VircovSummary::concatenate(&args.input, &args.output)?;
         }
     }
 

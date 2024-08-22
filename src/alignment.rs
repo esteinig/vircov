@@ -17,7 +17,9 @@ use std::str::from_utf8;
 use std::convert::TryInto;
 
 use rust_lapper::{Interval, Lapper};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::ser::SerializeSeq;
+use serde::de::{Visitor, SeqAccess};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 
@@ -42,11 +44,14 @@ Table display helpers
 */
 
 pub fn display_coverage(cov: &f64) -> String {
-    format!("{:.4}", cov)
+    format!("{:.2}", cov)
 }
 
 trait IntervalTag {
     fn as_tag(&self) -> String;
+    fn from_tag(tag: &str) -> Result<Self, String>
+    where
+        Self: Sized;
 }
 
 type AlignmentInterval = Interval<usize, usize>;
@@ -55,10 +60,66 @@ impl IntervalTag for AlignmentInterval {
     fn as_tag(&self) -> String {
         format!("{}:{}:{}", self.start, self.stop, self.val)
     }
+    fn from_tag(tag: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = tag.split(':').collect();
+        if parts.len() != 3 {
+            return Err(format!("Invalid interval tag: {}", tag));
+        }
+
+        let start = parts[0].parse().map_err(|_| "Invalid start value".to_string())?;
+        let stop = parts[1].parse().map_err(|_| "Invalid stop value".to_string())?;
+        let val = parts[2].parse().map_err(|_| "Invalid value".to_string())?;
+
+        Ok(AlignmentInterval { start, stop, val })
+    }
+}
+
+
+fn serialize_intervals<S>(intervals: &Vec<AlignmentInterval>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut seq = serializer.serialize_seq(Some(intervals.len()))?;
+    for interval in intervals {
+        seq.serialize_element(&interval.as_tag())?;
+    }
+    seq.end()
+}
+
+
+fn deserialize_intervals<'de, D>(deserializer: D) -> Result<Vec<AlignmentInterval>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct IntervalVisitor;
+
+    impl<'de> Visitor<'de> for IntervalVisitor {
+        type Value = Vec<AlignmentInterval>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a sequence of strings representing intervals")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut intervals = Vec::new();
+
+            while let Some(value) = seq.next_element::<String>()? {
+                let interval = AlignmentInterval::from_tag(&value).map_err(serde::de::Error::custom)?;
+                intervals.push(interval);
+            }
+
+            Ok(intervals)
+        }
+    }
+
+    deserializer.deserialize_seq(IntervalVisitor)
 }
 
 /// A struct for computed output fields
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Coverage {
     /// Name of the target sequence
     pub reference: String,
@@ -75,15 +136,17 @@ pub struct Coverage {
     /// Fractional coverage of the alignments
     pub coverage: f64,
     /// Descriptions of the reference sequence headers
-    pub description: String,
-    /// Descriptions of the reference sequence headers
     pub group: Option<String>,
     /// Descriptions of the reference sequence headers
     pub segment: Option<String>,
     /// Descriptions of the reference sequence headers
     pub name: Option<String>,
+    /// Descriptions of the reference sequence headers
+    pub description: String,
+    #[serde(skip)]
     /// Tags for alignment regions in string format
     pub intervals: Vec<AlignmentInterval>,
+    #[serde(skip)]
     /// Unique read identifiers for grouped operations
     pub read_id: Vec<String>,
 }
@@ -182,7 +245,7 @@ impl GroupedCoverage {
 /// A struct for computed output fields for display
 #[derive(Debug, Clone, PartialEq, Tabled)]
 pub struct CoverageTableFields {
-    #[tabled(rename="Sequence")]
+    #[tabled(rename="Reference")]
     /// Name of the target sequence
     name: String,
     #[tabled(rename="Regions")]
@@ -194,10 +257,10 @@ pub struct CoverageTableFields {
     #[tabled(rename="Alignments")]
     /// Number of alignments
     alignments: u64,
-    #[tabled(rename="Covered Bases")]
+    #[tabled(rename="Bases")]
     /// Number of bases covered by alignments
     bases: u64,
-    #[tabled(rename="Total Bases")]
+    #[tabled(rename="Length")]
     /// Length of the target sequence
     length: u64,
     #[tabled(rename="Coverage")]
@@ -207,7 +270,7 @@ pub struct CoverageTableFields {
     /// Descriptions of the reference sequence headers
     #[tabled(rename="Description")]
     description: String,
-    /// Tags for alignment regions in start:stop:aln format
+    /// Tags for alignment regions in start:stop:aligned format
     #[tabled(rename="Intervals")]
     intervals: String,
 }
@@ -230,6 +293,7 @@ impl CoverageTableFields {
     }
 }
 
+
 /*
 ==========================================
 Alignment parsing and interval extraction
@@ -240,7 +304,7 @@ type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 
 // Parse an optional FASTA file into a optional HashMap
 // with sequence name (key) and sequence record (value)
-fn parse_reference_fasta(
+pub fn parse_reference_fasta(
     fasta: Option<PathBuf>,
 ) -> Result<Option<HashMap<String, FastaRecord>>, VircovError> {
     match fasta {
@@ -260,7 +324,7 @@ fn parse_reference_fasta(
     }
 }
 
-fn parse_exclude_file(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, VircovError> {
+pub fn parse_exclude_file(exclude: Option<PathBuf>) -> Result<Option<Vec<String>>, VircovError> {
     match exclude {
         Some(_file) => {
             let reader = File::open(_file).map(BufReader::new)?;
@@ -423,24 +487,32 @@ impl VircovAligner {
             Some(output) => format!("> {}", output.display()),
             None => String::from("")
         };
+        
+        let secondary_arg = if self.config.secondary {
+            "--secondary=yes" // TODO: documentation default behaviour of Bowtie2
+        } else {
+            "--secondary=no"
+        };
 
 
         let cmd = if self.config.paired_end {
             format!(
-                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
+                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                aligner_args,
                 self.config.index.display(),
                 self.config.input[0].display(),
-                self.config.input[1].display()
+                self.config.input[1].display(),
+                self.config.threads,
+                self.config.threads,
             )
         } else {
             format!(
-                "minimap2 -ax {aligner_preset} -t {} {} '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
+                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                aligner_args,
                 self.config.index.display(),
-                self.config.input[0].display()
+                self.config.input[0].display(),
+                self.config.threads,
+                self.config.threads,
             )
         };
 
@@ -475,22 +547,30 @@ impl VircovAligner {
             false => &self.config.index
         };
 
+        let secondary_arg = if self.config.secondary {
+            "" // TODO: documentation default behaviour of Bowtie2
+        } else {
+            "-k 0"
+        };
+
         let cmd = if self.config.paired_end {
             format!(
-                "bowtie2 -x '{}' -1 '{}' -2 '{}' --mm -p {} {} | samtools view -hbF 12 - | samtools sort - {output} ",
+                "bowtie2 {secondary_arg} -x '{}' -1 '{}' -2 '{}' --mm -p {} {aligner_args} | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output} ",
                 index.display(),
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
-                aligner_args,
+                self.config.threads,
+                self.config.threads,
             )
         } else {
             format!(
-                "bowtie2 -x '{}' -U '{}' --mm -p {} {} | samtools view -hbF 12 - | samtools sort - {output}",
+                "bowtie2 {secondary_arg} -x '{}' -U '{}' --mm -p {} {aligner_args} | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
                 index.display(),
                 self.config.input[0].display(),
                 self.config.threads,
-                aligner_args,
+                self.config.threads,
+                self.config.threads,
             )
         };
 
@@ -516,22 +596,30 @@ impl VircovAligner {
             None => String::from("")
         };
 
+        let secondary_arg = if self.config.secondary {
+            "-N 50"  // TODO: documentation default behaviour of Strobealign
+        } else {
+            "-N 0"
+        };
+
         let cmd = if self.config.paired_end {
             format!(
-                "strobealign -t {} {} '{}' '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
+                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                aligner_args,
                 self.config.index.display(),
                 self.config.input[0].display(),
-                self.config.input[1].display()
+                self.config.input[1].display(),
+                self.config.threads,
+                self.config.threads,
             )
         } else {
             format!(
-                "strobealign -t {} {} '{}' '{}' | samtools view -hbF 12 - | samtools sort - {output}",
+                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                aligner_args,
                 self.config.index.display(),
-                self.config.input[0].display()
+                self.config.input[0].display(),
+                self.config.threads,
+                self.config.threads,
             )
         };
         self.run_command(&cmd)?;
@@ -1004,137 +1092,23 @@ impl ReadAlignment {
         }
         Ok(())
     }
-    /// Print the coverage statistics to console, alternatively in pretty table format
-    pub fn select_references(
-        &self,
-        grouped_coverage: &Vec<GroupedCoverage>, // If grouped, these are grouped fields
-        select_by: SelectHighest,
-        outdir: Option<PathBuf>,
-        annotation_config: &AnnotationConfig,
-    ) -> Result<HashMap<String, Vec<Coverage>> , VircovError> {
+
+    pub fn write_tsv(coverage: &[Coverage], output: &PathBuf, header: bool) -> Result<(), VircovError> {
+
+        let mut writer = csv::WriterBuilder::new()
+            .delimiter(b'\t')
+            .has_headers(header)
+            .from_path(&output)
+            .unwrap();
         
-        let reference_sequences = self.target_sequences.as_ref().ok_or(VircovError::GroupSequenceError)?;
-
-        if let Some(ref path) = outdir {
-            std::fs::create_dir_all(path)?;
+        for rec in coverage {
+            writer.serialize(rec)?;
         }
+        Ok(())
 
-        let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
-
-
-        for group_coverage in grouped_coverage {
-
-            let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
-
-            for cov in &group_coverage.coverage {
-
-                if let Some(segment) = &cov.segment {
-
-                    if segment != annotation_config.segment_na.as_ref().ok_or(VircovError::NoSegmentFieldProvided)? {
-                        match grouped_segments.entry(segment.clone()) {
-                            Entry::Occupied(mut entry) => {
-                                entry.get_mut().push(cov.clone());
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(vec![cov.clone()]);
-                            }
-                        }
-                    }
-                    
-                }
-
-            }
-
-            let segmented = !grouped_segments.is_empty();
-
-            // Filter reference sequences (contained in tags) by highest number of (unique) reads, alignments or coverage
-
-            if segmented {
-
-                let mut selected_segments: BTreeMap<String, Coverage> = BTreeMap::new();
-
-                for (segment, cov_fields) in grouped_segments {
-                    let selected = match select_by {
-                        SelectHighest::Reads => cov_fields.iter().max_by_key(|x| x.reads),
-                        SelectHighest::Coverage => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                        SelectHighest::Alignments => cov_fields.iter().max_by_key(|x| x.alignments)
-                    };
-
-                    match selected {
-                        Some(selected) => {
-                            selected_segments
-                                .entry(segment)
-                                .or_insert_with(|| selected.clone());
-                        }
-                        None => return Err(VircovError::GroupSelectReference),
-                    }
-                }
-
-                if let Some(path) = &outdir {
-
-                    let file_handle = std::fs::File::create(
-                        path.join(
-                            format!("{}.fasta", group_coverage.group)
-                        )
-                    )?;
-                    let mut writer = noodles::fasta::Writer::new(file_handle);
-
-                    for (_, segment_cov) in selected_segments {
-                        let seq = &reference_sequences[&segment_cov.reference];
-                        writer.write_record(seq)?;
-                        
-                        selected_reference_coverage.entry(group_coverage.group.clone())
-                            .and_modify(|x| x.push(segment_cov.clone()))
-                            .or_insert(vec![segment_cov]);
-                    }
-                } else {
-                    for (_, segment_cov) in selected_segments {
-                        selected_reference_coverage.entry(group_coverage.group.clone())
-                            .and_modify(|x| x.push(segment_cov.clone()))
-                            .or_insert(vec![segment_cov]);
-                    }
-                }
-
-            } else {
-
-                // If not segmented, simply select the best reference sequence using the
-                // group_select_by metric and select the sequence from the header fields
-                // to write to FASTA
-
-                let max = match select_by {
-                    SelectHighest::Reads => group_coverage.coverage.iter().max_by_key(|x| x.reads),
-                    SelectHighest::Coverage => group_coverage.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                    SelectHighest::Alignments => group_coverage.coverage.iter().max_by_key(|x| x.alignments)
-                };
-
-                match max {
-                    Some(field) => {
-                        let seq = &reference_sequences[&field.reference];
-
-                        if let Some(path) = &outdir {
-                            
-                            let file_handle = std::fs::File::create(
-                                path.join(
-                                    format!("{}.fasta", group_coverage.group)
-                                )
-                            )?;
-                            let mut writer = noodles::fasta::Writer::new(file_handle);
-                            writer.write_record(seq)?;
-                        }
-
-                        selected_reference_coverage.entry(group_coverage.group.clone())
-                            .and_modify(|x| x.push(field.clone()))
-                            .or_insert(vec![field.clone()]);
-                    }
-                    _ => return Err(VircovError::GroupSelectReference),
-                }
-            }
-
-        }
-
-        Ok(selected_reference_coverage)
     }
-    pub fn print_table(coverage: &mut [Coverage], sort: bool) {
+
+    pub fn print_coverage_table(coverage: &mut [Coverage], sort: bool) {
 
         if sort {
             coverage.sort_by(|a, b| {
@@ -1148,7 +1122,7 @@ impl ReadAlignment {
             .collect::<Vec<CoverageTableFields>>();
         
         let mut table = Table::new(table_fields);
-    
+
         table.modify(
             Columns::new(7..), 
             Width::wrap(32).keep_words()
@@ -1156,7 +1130,7 @@ impl ReadAlignment {
             Style::modern()
         );
 
-        println!("{}", table);
+        eprintln!("{}", table);
     }
     /// Print the coverage distributions to console as a text-based coverage plot
     pub fn coverage_plots(
@@ -1187,44 +1161,7 @@ impl ReadAlignment {
 
         Ok(())
     }
-    pub fn group_coverage(
-        &self,
-        coverage: &[Coverage],
-        group_by: String,
-    ) -> Result<Vec<GroupedCoverage>, VircovError> {
-        let mut coverage_groups: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
-
-        for cov in coverage {
-            if let Some(group) = &cov.group {
-                match coverage_groups.entry(group.to_string()) {
-                    Entry::Occupied(mut entry) => {
-                        entry.get_mut().push(cov);
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(vec![cov]);
-                    }
-                }
-            } else {
-                return Err(VircovError::GroupAnnotationMissing(cov.reference.to_owned()))
-            }
-        }
-
-        let mut grouped_coverage_all: Vec<GroupedCoverage> = Vec::new();
-        for (group, coverage) in coverage_groups {
-            let group = group.trim().replace(&group_by, "");
-            let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
-
-            if grouped_coverage_data.total_regions >= self.filter.min_grouped_regions
-                && grouped_coverage_data.mean_coverage >= self.filter.min_grouped_mean_coverage
-                && grouped_coverage_data.total_alignments >= self.filter.min_grouped_alignments
-                && grouped_coverage_data.total_reads >= self.filter.min_grouped_reads
-            {
-                grouped_coverage_all.push(grouped_coverage_data);
-            }
-        }
-
-        Ok(grouped_coverage_all)
-    }
+    
 }
 
 /*

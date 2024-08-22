@@ -1,17 +1,20 @@
-use crate::alignment::{Aligner, AlignmentFormat, Coverage, GroupedCoverage, Preset, ReadAlignment, SelectHighest, VircovAligner};
+use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, GroupedCoverage, Preset, ReadAlignment, SelectHighest, VircovAligner};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
-use crate::terminal::RunArgs;
+use crate::terminal::{CoverageArgs, RunArgs};
 use crate::utils::{get_file_component, FileComponent};
 
 use itertools::Itertools;
 use anyhow::Result;
 use indexmap::IndexMap;
+use noodles::fasta::Record;
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
 use tabled::settings::object::Columns;
 use tabled::settings::{Style, Width};
 use tabled::{Table, Tabled};
-use std::collections::HashMap;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
@@ -19,11 +22,18 @@ use rayon::iter::{ParallelIterator, IntoParallelIterator};
 
 /// The main Vircov application structure.
 pub struct Vircov {
-    config: VircovConfig
+    config: VircovConfig,
+    references: Option<HashMap<String, Record>>
 }
 impl Vircov {
-    pub fn from(config: VircovConfig) -> Self {
-        Self { config }
+    pub fn from(config: VircovConfig) -> Result<Self, VircovError> {
+
+        Ok(Self { 
+            references: parse_reference_fasta(
+                config.reference.fasta.clone()
+            )?,
+            config, 
+        })
     }
     pub fn run(
         &self, 
@@ -32,6 +42,7 @@ impl Vircov {
         threads: usize, 
         consensus: bool, 
         keep: bool,
+        table: bool,
         alignment: Option<PathBuf>,
         alignment_format: Option<AlignmentFormat>
     ) -> Result<(), VircovError> {
@@ -48,19 +59,15 @@ impl Vircov {
             false
         )?;
 
-        let grouped_coverage = self.group(
-            &read_alignment, 
-            &coverage
-        )?;
+        let grouped = self.group(&coverage)?;
 
         let selections = self.select(
-            &read_alignment, 
-            &grouped_coverage, 
-            SelectHighest::Coverage
+            &grouped, 
+            SelectHighest::Coverage,
+            None
         )?;
 
         let (consensus, remap) = self.remap(
-            &read_alignment, 
             &selections, 
             &self.config.outdir.clone(), 
             parallel, 
@@ -73,7 +80,10 @@ impl Vircov {
 
         let summary = self.summary(consensus, scan, remap)?;
 
-        summary.print_table(true);
+        if table {
+            summary.print_table(true);
+        }
+        
         summary.write_tsv(&tsv, true)?;
 
         if !keep {
@@ -81,6 +91,35 @@ impl Vircov {
         }
         Ok(())
 
+    }
+    pub fn run_coverage(
+        &self,
+        tsv: &PathBuf,
+        tags: bool,
+        zero: bool,
+        table: bool,
+        alignment: Option<PathBuf>,
+        alignment_format: Option<AlignmentFormat>
+    ) -> Result<(), VircovError> {
+
+        let read_alignment = match alignment {
+            Some(path) => self.alignment(&path, alignment_format)?,
+            None => self.align()?
+        };
+
+        let mut coverage = self.coverage(
+            &read_alignment, 
+            tags, 
+            zero
+        )?;
+
+        if table {
+            ReadAlignment::print_coverage_table(&mut coverage, true);
+        }
+
+        ReadAlignment::write_tsv(&coverage, tsv, true)?;
+
+        Ok(())
     }
     pub fn alignment(
         &self, 
@@ -124,23 +163,175 @@ impl Vircov {
             zero
         )
     }
-    pub fn group(&self, read_alignment: &ReadAlignment, coverage: &Vec<Coverage>) -> Result<Vec<GroupedCoverage>, VircovError> {
-        read_alignment.group_coverage(
-            coverage, 
-            self.config.reference.annotation.group.clone().unwrap()
-        )
+    pub fn group(
+        &self,
+        coverage: &[Coverage]
+    ) -> Result<Vec<GroupedCoverage>, VircovError> {
+        let mut coverage_groups: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
+
+        for cov in coverage {
+            if let Some(group) = &cov.group {
+                match coverage_groups.entry(group.to_string()) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().push(cov);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(vec![cov]);
+                    }
+                }
+            } else {
+                return Err(VircovError::GroupAnnotationMissing(cov.reference.to_owned()))
+            }
+        }
+
+        let mut grouped_coverage_all: Vec<GroupedCoverage> = Vec::new();
+        for (group, coverage) in coverage_groups {
+            let group = group.trim().replace(self.config.reference.annotation.group.as_ref().unwrap(), ""); // TODO
+            let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
+
+            if grouped_coverage_data.total_regions >= self.config.filter.min_grouped_regions
+                && grouped_coverage_data.mean_coverage >= self.config.filter.min_grouped_mean_coverage
+                && grouped_coverage_data.total_alignments >= self.config.filter.min_grouped_alignments
+                && grouped_coverage_data.total_reads >= self.config.filter.min_grouped_reads
+            {
+                grouped_coverage_all.push(grouped_coverage_data);
+            }
+        }
+
+        Ok(grouped_coverage_all)
     }
-    pub fn select(&self, read_alignment: &ReadAlignment, grouped_coverage: &Vec<GroupedCoverage>, select: SelectHighest) -> Result<HashMap<String, Vec<Coverage>>, VircovError> {
-        read_alignment.select_references(
-            grouped_coverage, 
-            select, 
-            None, 
-            &self.config.reference.annotation
-        )
+    pub fn select(
+        &self,
+        grouped_coverage: &Vec<GroupedCoverage>, // If grouped, these are grouped fields
+        select_by: SelectHighest,
+        outdir: Option<PathBuf>,
+    ) -> Result<HashMap<String, Vec<Coverage>> , VircovError> {
+        
+        let refs = self.references
+            .as_ref()
+            .ok_or(VircovError::GroupSequenceError)?;
+
+        if let Some(ref path) = outdir {
+            std::fs::create_dir_all(path)?;
+        }
+
+        let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
+
+
+        for group_coverage in grouped_coverage {
+
+            let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
+
+            for cov in &group_coverage.coverage {
+
+                if let Some(segment) = &cov.segment {
+
+                    if segment != self.config.reference.annotation.segment_na.as_ref().ok_or(VircovError::NoSegmentFieldProvided)? {
+                        match grouped_segments.entry(segment.clone()) {
+                            Entry::Occupied(mut entry) => {
+                                entry.get_mut().push(cov.clone());
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(vec![cov.clone()]);
+                            }
+                        }
+                    }
+                    
+                }
+
+            }
+
+            let segmented = !grouped_segments.is_empty();
+
+            // Filter reference sequences (contained in tags) by highest number of (unique) reads, alignments or coverage
+
+            if segmented {
+
+                let mut selected_segments: BTreeMap<String, Coverage> = BTreeMap::new();
+
+                for (segment, cov_fields) in grouped_segments {
+                    let selected = match select_by {
+                        SelectHighest::Reads => cov_fields.iter().max_by_key(|x| x.reads),
+                        SelectHighest::Coverage => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                        SelectHighest::Alignments => cov_fields.iter().max_by_key(|x| x.alignments)
+                    };
+
+                    match selected {
+                        Some(selected) => {
+                            selected_segments
+                                .entry(segment)
+                                .or_insert_with(|| selected.clone());
+                        }
+                        None => return Err(VircovError::GroupSelectReference),
+                    }
+                }
+
+                if let Some(path) = &outdir {
+
+                    let file_handle = std::fs::File::create(
+                        path.join(
+                            format!("{}.fasta", group_coverage.group)
+                        )
+                    )?;
+                    let mut writer = noodles::fasta::Writer::new(file_handle);
+
+                    for (_, segment_cov) in selected_segments {
+                        let seq = &refs[&segment_cov.reference];
+                        writer.write_record(seq)?;
+                        
+                        selected_reference_coverage.entry(group_coverage.group.clone())
+                            .and_modify(|x| x.push(segment_cov.clone()))
+                            .or_insert(vec![segment_cov]);
+                    }
+                } else {
+                    for (_, segment_cov) in selected_segments {
+                        selected_reference_coverage.entry(group_coverage.group.clone())
+                            .and_modify(|x| x.push(segment_cov.clone()))
+                            .or_insert(vec![segment_cov]);
+                    }
+                }
+
+            } else {
+
+                // If not segmented, simply select the best reference sequence using the
+                // group_select_by metric and select the sequence from the header fields
+                // to write to FASTA
+
+                let max = match select_by {
+                    SelectHighest::Reads => group_coverage.coverage.iter().max_by_key(|x| x.reads),
+                    SelectHighest::Coverage => group_coverage.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                    SelectHighest::Alignments => group_coverage.coverage.iter().max_by_key(|x| x.alignments)
+                };
+
+                match max {
+                    Some(field) => {
+                        let seq = &refs[&field.reference];
+
+                        if let Some(path) = &outdir {
+                            
+                            let file_handle = std::fs::File::create(
+                                path.join(
+                                    format!("{}.fasta", group_coverage.group)
+                                )
+                            )?;
+                            let mut writer = noodles::fasta::Writer::new(file_handle);
+                            writer.write_record(seq)?;
+                        }
+
+                        selected_reference_coverage.entry(group_coverage.group.clone())
+                            .and_modify(|x| x.push(field.clone()))
+                            .or_insert(vec![field.clone()]);
+                    }
+                    _ => return Err(VircovError::GroupSelectReference),
+                }
+            }
+
+        }
+
+        Ok(selected_reference_coverage)
     }
     pub fn remap(
         &self, 
-        read_alignment: &ReadAlignment, 
         selections: &HashMap<String, Vec<Coverage>>, 
         outdir: &PathBuf,
         parallel: usize, 
@@ -149,7 +340,9 @@ impl Vircov {
         keep: bool
     ) -> Result<(Vec<ConsensusRecord>, Vec<Coverage>), VircovError> {
 
-        let refs = read_alignment.target_sequences.as_ref().unwrap();
+        let refs = self.references
+            .as_ref()
+            .ok_or(VircovError::GroupSequenceError)?;
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(parallel)
@@ -274,14 +467,6 @@ impl Vircov {
     }
     pub fn summary(&self, consensus: Vec<ConsensusRecord>, scan: Vec<Coverage>, remap: Vec<Coverage>) -> Result<VircovSummary, VircovError> {
 
-        // let selected_coverage: Vec<Coverage> = if  {
-        //     coverage
-        // } else {
-        //     group_selections.values().flatten().cloned().collect()
-        // };
-
-        // ReadAlignment::print_table(&mut selected_coverage, true);
-
         VircovSummary::new(
             None, 
             None, 
@@ -335,8 +520,40 @@ impl VircovConfig {
                 args.aligner.clone(), 
                 args.preset.clone(), 
                 false, 
+                args.secondary,
                 Some(outdir.join("scan.bam")),
                 args.scan_threads
+            ),
+            reference: ReferenceConfig::with_default(
+                args.reference.as_ref().unwrap()
+            ),
+            filter: FilterConfig::default(),
+            coverage: CoverageConfig {},
+            subtype: SubtypeConfig {}
+        })
+    }
+    pub fn from_coverage_args(args: &CoverageArgs) -> Result<Self, VircovError> {
+
+        let outdir = match &args.workdir {
+            None => PathBuf::from("."),
+            Some(dir) => dir.to_owned()
+        };
+
+        if !outdir.exists() && !outdir.is_dir() {
+            create_dir_all(&outdir)?
+        }
+
+        Ok(Self {
+            outdir: outdir.clone(),
+            aligner: AlignerConfig::with_default(
+                &args.input, 
+                &args.index, 
+                args.aligner.clone(), 
+                args.preset.clone(), 
+                false, 
+                args.secondary,
+                Some(outdir.join("scan.bam")),
+                args.threads
             ),
             reference: ReferenceConfig::with_default(
                 args.reference.as_ref().unwrap()
@@ -369,6 +586,7 @@ pub struct AlignerConfig {
     pub paired_end: bool,
     pub index: PathBuf,
     pub create_index: bool,
+    pub secondary: bool,
     pub output: Option<PathBuf>,
     pub threads: usize
 }
@@ -388,7 +606,7 @@ impl AlignerConfig {
         config.output = output;
         config
     }
-    pub fn with_default(input: &Vec<PathBuf>, index: &PathBuf, aligner: Aligner, preset: Option<Preset>, create_index: bool, output: Option<PathBuf>, threads: usize) -> Self {
+    pub fn with_default(input: &Vec<PathBuf>, index: &PathBuf, aligner: Aligner, preset: Option<Preset>, create_index: bool, secondary: bool, output: Option<PathBuf>, threads: usize) -> Self {
         Self {
             input: input.clone(),
             index: index.clone(),
@@ -396,6 +614,7 @@ impl AlignerConfig {
             preset,
             output,
             create_index,
+            secondary,
             threads,
             ..Default::default()
         }
@@ -410,6 +629,7 @@ impl Default for AlignerConfig {
             input: Vec::from([PathBuf::from("smoke_R1.fastq.gz"), PathBuf::from("smoke_R2.fastq.gz")]),
             paired_end: true,
             create_index: false,
+            secondary: false,
             index: PathBuf::from("reference.fasta"),
             output: Some(PathBuf::from("test.sam")),
             threads: 8
@@ -662,6 +882,8 @@ pub fn display_f64(s: f64) -> String
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Tabled)]
 pub struct RunRecord {
     #[tabled(skip)]
+    pub id: Option<String>,
+    #[tabled(skip)]
     pub index: Option<String>,
     #[tabled(skip)]
     pub aligner: Option<Aligner>,
@@ -763,6 +985,7 @@ impl RunRecord {
 
 
         Ok(Self {
+            id: None,
             index: match index { 
                 Some(index) => Some(get_file_component(
                     &index, 
@@ -953,10 +1176,32 @@ impl VircovSummary {
         for rec in &self.records {
             writer.serialize(rec)?;
         }
+        writer.flush()?;
         Ok(())
 
     }
+    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf) -> Result<(), VircovError> {
 
+        let mut records = Vec::new();
+        for file in input {
+            let filename = get_file_component(&file, FileComponent::FileStem)?;
+            let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(true).from_path(&file).unwrap();
+            for rec in reader.deserialize() {
+                let mut record: RunRecord = rec?;
+                record.id = Some(filename.clone());
+                records.push(record)
+            }
+        }
+        
+        let mut writer = csv::WriterBuilder::new().delimiter(b'\t').has_headers(true).from_path(&output).unwrap();
+        for record in records {
+            writer.serialize(record)?;
+        }
+        writer.flush()?;
+
+        Ok(())
+
+    }
     pub fn print_table(&self, sort: bool) {
 
         let records = if sort {
@@ -981,7 +1226,7 @@ impl VircovSummary {
             Style::modern()
         );
 
-        println!("{}", table);
+        eprintln!("{}", table);
 }
 }
 
