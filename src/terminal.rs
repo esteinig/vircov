@@ -90,7 +90,7 @@ pub struct RunArgs {
     #[clap(long, default_value="segment=")]
     pub segment_field: Option<String>,
     /// Segment field identifier negative (e.g. "segment=N/A")
-    #[clap(long, short='j', default_value="segment=N/A")]
+    #[clap(long, default_value="segment=N/A")]
     pub segment_field_nan: Option<String>,
     /// Threads for scanning alignment
     #[clap(long, default_value = "8")]
@@ -149,6 +149,9 @@ pub struct CoverageArgs {
     /// Threads for alignment
     #[clap(long, short = 't', default_value = "4")]
     pub threads: usize,
+    /// Output aligned read identifiers
+    #[clap(long)]
+    pub read_id: Option<PathBuf>,
     /// Include secondary alignments
     #[clap(long)]
     pub secondary: bool,
@@ -240,6 +243,12 @@ pub struct ConcatArgs {
     /// Concatenated output file
     #[clap(long, short = 'o')]
     pub output: PathBuf,
+    /// Filter by minimum consensus completeness
+    #[clap(long, short = 'm', default_value="0")]
+    pub min_completeness: f64,
+    /// Add the file stem as identifier to column
+    #[clap(long, short = 'f')]
+    pub file_id: bool,
 }
 
 

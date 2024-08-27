@@ -21,7 +21,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::ser::SerializeSeq;
 use serde::de::{Visitor, SeqAccess};
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use std::fs::File;
 use std::io::Write;
@@ -888,7 +888,6 @@ impl ReadAlignment {
         Self::new(target_lappers, reference, filter)
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Compute coverage distribution by target sequence
     pub fn coverage(
         &self,
@@ -1049,32 +1048,32 @@ impl ReadAlignment {
 
         Ok(coverage_fields)
     }
-    pub fn write_reads(&self, coverage_fields: &[Coverage], output: PathBuf, split: bool) -> Result<(), VircovError> {
+    pub fn write_reads(coverage: &[Coverage], output: PathBuf, ref_id: bool) -> Result<(), VircovError> {
 
-        if split {
-            let mut file_handle = File::create(&output)?;
+        let mut file_handle = File::create(&output)?;
 
-            let all_unique_read_ids: Vec<String> = coverage_fields
-                .iter()
-                .flat_map(|field| field.read_id.to_owned())
-                .unique()
-                .collect();
-
-            for read_id in all_unique_read_ids {
-                writeln!(file_handle, "{}", &read_id)?;
-            }
-        } else {
-            std::fs::create_dir_all(&output)?;
-            for field in coverage_fields.iter() {
-                let sanitized_name = field.reference.replace(' ', "__");
-
-                let file_path = output.join(sanitized_name).with_extension("txt");
-                let mut file_handle = File::create(file_path.as_path())?;
-                for read_id in field.read_id.iter() {
-                    writeln!(file_handle, "{}", &read_id)?
+        if ref_id {
+            let mut read_ids = HashSet::new();
+            for cov in coverage {
+                for read_id in &cov.read_id {
+                    read_ids.insert((read_id, &cov.reference));
                 }
             }
+            for (read_id, ref_id) in read_ids {
+                writeln!(file_handle, "{}\t{}", &read_id, ref_id)?;
+            }
+        } else {
+            let mut read_ids = HashSet::new();
+            for cov in coverage {
+                for read_id in &cov.read_id {
+                    read_ids.insert(read_id);
+                }
+            }
+            for read_id in read_ids {
+                writeln!(file_handle, "{}", &read_id)?;
+            }
         }
+        
 
         Ok(())
     }

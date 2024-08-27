@@ -62,6 +62,7 @@ fn main() -> Result<(), VircovError> {
                 args.intervals, 
                 args.zero, 
                 args.table,
+                args.read_id.clone(),
                 None, 
                 None
             )?;
@@ -177,7 +178,7 @@ fn main() -> Result<(), VircovError> {
             subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
         }
         Commands::Concat(args) => {
-            VircovSummary::concatenate(&args.input, &args.output)?;
+            VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
         }
     }
 

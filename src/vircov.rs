@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
 use rayon::iter::{ParallelIterator, IntoParallelIterator};
 
-/// The main Vircov application structure.
+/// Vircov application structure.
 pub struct Vircov {
     config: VircovConfig,
     references: Option<HashMap<String, Record>>
@@ -77,20 +77,16 @@ impl Vircov {
         )?;
 
         let scan = selections.values().flatten().cloned().collect();
-
         let summary = self.summary(consensus, scan, remap)?;
 
-        if table {
-            summary.print_table(true);
-        }
-        
+        if table { summary.print_table(true); }
         summary.write_tsv(&tsv, true)?;
 
         if !keep {
             remove_dir_all(&self.config.outdir)?;
         }
-        Ok(())
 
+        Ok(())
     }
     pub fn run_coverage(
         &self,
@@ -98,6 +94,7 @@ impl Vircov {
         tags: bool,
         zero: bool,
         table: bool,
+        read_id: Option<PathBuf>,
         alignment: Option<PathBuf>,
         alignment_format: Option<AlignmentFormat>
     ) -> Result<(), VircovError> {
@@ -118,6 +115,10 @@ impl Vircov {
         }
 
         ReadAlignment::write_tsv(&coverage, tsv, true)?;
+
+        if let Some(path) = read_id {
+            ReadAlignment::write_reads(&coverage, path, false)?;
+        }
 
         Ok(())
     }
@@ -465,12 +466,17 @@ impl Vircov {
         })
 
     }
-    pub fn summary(&self, consensus: Vec<ConsensusRecord>, scan: Vec<Coverage>, remap: Vec<Coverage>) -> Result<VircovSummary, VircovError> {
+    pub fn summary(
+        &self, 
+        consensus: Vec<ConsensusRecord>, 
+        scan: Vec<Coverage>, 
+        remap: Vec<Coverage>
+    ) -> Result<VircovSummary, VircovError> {
 
         VircovSummary::new(
             None, 
             None, 
-            ConsensusAssembler::Ivar,
+            None,
             scan
                 .iter()
                 .map(|cov| VircovRecord::from(
@@ -606,7 +612,16 @@ impl AlignerConfig {
         config.output = output;
         config
     }
-    pub fn with_default(input: &Vec<PathBuf>, index: &PathBuf, aligner: Aligner, preset: Option<Preset>, create_index: bool, secondary: bool, output: Option<PathBuf>, threads: usize) -> Self {
+    pub fn with_default(
+        input: &Vec<PathBuf>, 
+        index: &PathBuf, 
+        aligner: Aligner, 
+        preset: Option<Preset>, 
+        create_index: bool, 
+        secondary: bool, 
+        output: Option<PathBuf>, 
+        threads: usize
+    ) -> Self {
         Self {
             input: input.clone(),
             index: index.clone(),
@@ -873,22 +888,20 @@ pub fn display_option_f64(opt: &Option<f64>) -> String
     }
 }
 
-
-pub fn display_f64(s: f64) -> String 
-{
-    format!("{:.2}", s)
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Tabled)]
 pub struct RunRecord {
     #[tabled(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[tabled(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub index: Option<String>,
     #[tabled(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub aligner: Option<Aligner>,
     #[tabled(skip)]
-    pub assembler: ConsensusAssembler,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assembler: Option<ConsensusAssembler>,
     #[tabled(rename="Taxid")]
     #[tabled(display_with = "display_option_string")]
     pub taxid: Option<String>,
@@ -915,7 +928,6 @@ pub struct RunRecord {
     #[tabled(rename="Scan Bases")]
     pub scan_bases_covered: u64,
     #[tabled(skip)]
-    #[tabled(display_with = "display_f64")]
     #[tabled(rename="Scan Coverage")]
     pub scan_coverage: f64,
     #[tabled(rename="Regions")]
@@ -952,7 +964,7 @@ impl RunRecord {
     pub fn from(
         index: Option<PathBuf>, 
         aligner: Option<Aligner>, 
-        assembler: ConsensusAssembler,
+        assembler: Option<ConsensusAssembler>,
         annotation: Annotation, 
         scan_record: VircovRecord, 
         remap_record: Option<VircovRecord>, 
@@ -1078,7 +1090,7 @@ impl VircovSummary {
     pub fn new(
         index: Option<PathBuf>, 
         aligner: Option<Aligner>,
-        assembler: ConsensusAssembler, 
+        assembler: Option<ConsensusAssembler>, 
         scan_records: Vec<VircovRecord>,
         remap_records: Vec<VircovRecord>, 
         consensus_records: Vec<ConsensusRecord>, 
@@ -1180,7 +1192,7 @@ impl VircovSummary {
         Ok(())
 
     }
-    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf) -> Result<(), VircovError> {
+    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: f64, file_id: bool) -> Result<(), VircovError> {
 
         let mut records = Vec::new();
         for file in input {
@@ -1188,11 +1200,24 @@ impl VircovSummary {
             let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(true).from_path(&file).unwrap();
             for rec in reader.deserialize() {
                 let mut record: RunRecord = rec?;
-                record.id = Some(filename.clone());
-                records.push(record)
+
+                if file_id {
+                    record.id = Some(filename.clone());
+                }
+
+                if let Some(completeness) = record.consensus_completeness {
+                    if completeness >= min_completeness {
+                        records.push(record)
+                    }
+                }
+                
             }
         }
-        
+        records.sort_by(|a, b| {
+            b.consensus_completeness.partial_cmp(&a.consensus_completeness)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         let mut writer = csv::WriterBuilder::new().delimiter(b'\t').has_headers(true).from_path(&output).unwrap();
         for record in records {
             writer.serialize(record)?;
