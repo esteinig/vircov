@@ -1,6 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
-use crate::vircov::{AlignerConfig, Annotation, AnnotationConfig, FilterConfig, ReferenceConfig};
+use crate::vircov::{AlignerConfig, Annotation, AnnotationConfig, FilterConfig, ReferenceConfig, VircovRecord};
 
 
 use anyhow::Result;
@@ -550,7 +550,7 @@ impl VircovAligner {
         let secondary_arg = if self.config.secondary {
             "" // TODO: documentation default behaviour of Bowtie2
         } else {
-            "-k 0"
+            "-k 1"
         };
 
         let cmd = if self.config.paired_end {
@@ -597,9 +597,9 @@ impl VircovAligner {
         };
 
         let secondary_arg = if self.config.secondary {
-            "-N 50"  // TODO: documentation default behaviour of Strobealign
+            "-N 50"  
         } else {
-            "-N 0"
+            "-N 0" // TODO: documentation default behaviour of Strobealign
         };
 
         let cmd = if self.config.paired_end {
@@ -891,7 +891,6 @@ impl ReadAlignment {
     /// Compute coverage distribution by target sequence
     pub fn coverage(
         &self,
-        annotation_config: &AnnotationConfig,
         tags: bool,
         zero: bool,
     ) -> Result<Vec<Coverage>, VircovError> {
@@ -977,7 +976,7 @@ impl ReadAlignment {
                 _ => target_cov_n >= self.filter.min_scan_regions,
             };
 
-            let annotation = Annotation::from(&target_description, annotation_config);
+            let annotation = Annotation::from(&target_description, &self.reference.annotation);
             
             let reads_aligned = targets.len() as u64;
 
@@ -1022,7 +1021,7 @@ impl ReadAlignment {
                                 Some(descr) => descr.to_owned(),
                             };
 
-                            let annotation = Annotation::from(&descr, annotation_config);
+                            let annotation = Annotation::from(&descr, &self.reference.annotation);
 
                             coverage_fields.push(Coverage {
                                 reference: ref_seq.to_owned(),
@@ -1101,7 +1100,7 @@ impl ReadAlignment {
             .unwrap();
         
         for rec in coverage {
-            writer.serialize(rec)?;
+            writer.serialize(VircovRecord::from_coverage(rec.clone(), false))?;
         }
         Ok(())
 

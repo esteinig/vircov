@@ -71,7 +71,10 @@ fn main() -> Result<(), VircovError> {
         Commands::Abundance(args) => {},
         Commands::Subtype(args) => {
 
-            let subtype_db = SubtypeDatabase::from(&args.database, &args.workdir)?;
+            let subtype_db = SubtypeDatabase::from(
+                &args.database, 
+                &args.workdir
+            )?;
             
             
             log::info!("Database prepared, computing identity and coverage metrics...");
@@ -94,7 +97,15 @@ fn main() -> Result<(), VircovError> {
                 .collect();
         
 
-            subtype_db.create_ranked_tables(&args.output, &collected, &args.metric, args.ranks, true, args.with_genotype, subtype_db.protein)?;
+            subtype_db.create_ranked_tables(
+                &args.output, 
+                &collected, 
+                &args.metric, 
+                args.ranks, 
+                true, 
+                args.with_genotype, 
+                subtype_db.protein
+            )?;
             
             if !args.keep {
                 subtype_db.remove_workdir()?;

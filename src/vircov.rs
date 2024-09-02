@@ -15,7 +15,7 @@ use tabled::settings::{Style, Width};
 use tabled::{Table, Tabled};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{create_dir_all, remove_dir_all, remove_file};
+use std::fs::{create_dir_all, read, remove_dir_all, remove_file};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
 use rayon::iter::{ParallelIterator, IntoParallelIterator};
@@ -53,11 +53,7 @@ impl Vircov {
             None => self.align()?
         };
 
-        let coverage = self.coverage(
-            &read_alignment, 
-            false, 
-            false
-        )?;
+        let coverage = read_alignment.coverage(false, false)?;
 
         let grouped = self.group(&coverage)?;
 
@@ -104,11 +100,7 @@ impl Vircov {
             None => self.align()?
         };
 
-        let mut coverage = self.coverage(
-            &read_alignment, 
-            tags, 
-            zero
-        )?;
+        let mut coverage = read_alignment.coverage(tags, zero)?;
 
         if table {
             ReadAlignment::print_coverage_table(&mut coverage, true);
@@ -152,18 +144,6 @@ impl Vircov {
 
         Ok(read_alignment)
     }
-    pub fn coverage(
-        &self,
-        read_alignment: &ReadAlignment, 
-        tags: bool, 
-        zero: bool
-    ) -> Result<Vec<Coverage>, VircovError> {
-        read_alignment.coverage(
-            &self.config.reference.annotation, 
-            tags, 
-            zero
-        )
-    }
     pub fn group(
         &self,
         coverage: &[Coverage]
@@ -187,7 +167,12 @@ impl Vircov {
 
         let mut grouped_coverage_all: Vec<GroupedCoverage> = Vec::new();
         for (group, coverage) in coverage_groups {
-            let group = group.trim().replace(self.config.reference.annotation.group.as_ref().unwrap(), ""); // TODO
+            let group = group.trim().replace(
+                self.config.reference.annotation.group
+                    .as_ref()
+                    .unwrap(),
+                 ""
+            ); // TODO
             let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
 
             if grouped_coverage_data.total_regions >= self.config.filter.min_grouped_regions
@@ -395,7 +380,7 @@ impl Vircov {
                     let remap_coverage = remap_aligner
                         .run_aligner()?
                         .unwrap()
-                        .coverage(&self.config.reference.annotation, true, false)?;
+                        .coverage( true, false)?;
 
                     let mut consensus_records = Vec::new();
 
@@ -479,13 +464,13 @@ impl Vircov {
             None,
             scan
                 .iter()
-                .map(|cov| VircovRecord::from(
+                .map(|cov| AlignmentRecord::from(
                     cov.clone(), 
                     false, 
                     None
                 ))
                 .collect(),
-            remap.iter().map(|cov| VircovRecord::from(
+            remap.iter().map(|cov| AlignmentRecord::from(
                 cov.clone(), 
                 false, 
                 None
@@ -531,7 +516,7 @@ impl VircovConfig {
                 args.scan_threads
             ),
             reference: ReferenceConfig::with_default(
-                args.reference.as_ref().unwrap()
+                Some(args.reference.clone())
             ),
             filter: FilterConfig::default(),
             coverage: CoverageConfig {},
@@ -562,7 +547,7 @@ impl VircovConfig {
                 args.threads
             ),
             reference: ReferenceConfig::with_default(
-                args.reference.as_ref().unwrap()
+                args.reference.clone()
             ),
             filter: FilterConfig::default(),
             coverage: CoverageConfig {},
@@ -660,15 +645,15 @@ pub struct ReferenceConfig {
 impl ReferenceConfig {
     pub fn remap_config(
         &self, 
-        index: &PathBuf, 
+        fasta: &PathBuf, 
     ) -> Self {
         let mut config = self.clone();
-        config.fasta = Some(index.to_owned());
+        config.fasta = Some(fasta.to_owned());
         config
     }
-    pub fn with_default(fasta: &PathBuf) -> Self {
+    pub fn with_default(fasta: Option<PathBuf>) -> Self {
         Self {
-            fasta: Some(fasta.clone()),
+            fasta: fasta.clone(),
             ..Default::default()
         }
     }
@@ -676,7 +661,7 @@ impl ReferenceConfig {
 impl Default for ReferenceConfig {
     fn default() -> Self {
         Self {
-            fasta: Some(PathBuf::from("reference.fasta")),
+            fasta: None,
             exclude: None,
             annotation: AnnotationConfig::virosaurus()
         }
@@ -707,8 +692,8 @@ impl Default for FilterConfig {
             min_mapq: 0,
             min_scan_alignments: 0,
             min_scan_regions: 0,
-            min_scan_coverage: 0.01,
-            min_scan_reads: 10,
+            min_scan_coverage: 0.,
+            min_scan_reads: 0,
             min_reference_length: 0,
             min_scan_regions_coverage: None,
             min_grouped_regions: 0,
@@ -889,7 +874,7 @@ pub fn display_option_f64(opt: &Option<f64>) -> String
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Tabled)]
-pub struct RunRecord {
+pub struct VircovRecord {
     #[tabled(skip)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -960,14 +945,14 @@ pub struct RunRecord {
     #[tabled(skip)]
     pub reference_description: String,
 }
-impl RunRecord {
+impl VircovRecord {
     pub fn from(
         index: Option<PathBuf>, 
         aligner: Option<Aligner>, 
         assembler: Option<ConsensusAssembler>,
         annotation: Annotation, 
-        scan_record: VircovRecord, 
-        remap_record: Option<VircovRecord>, 
+        scan_record: AlignmentRecord, 
+        remap_record: Option<AlignmentRecord>, 
         consensus_record: Option<ConsensusRecord>, 
     ) -> Result<Self, VircovError> {
         
@@ -1028,13 +1013,45 @@ impl RunRecord {
             reference_description: scan_record.description,
         })
     }
+    pub fn from_coverage(
+        coverage: Coverage,
+        intervals: bool,
+    ) -> Self {
+        let scan_record = AlignmentRecord::from(coverage, intervals, None);
+        Self {
+            id: None,
+            index: None,
+            aligner: None,
+            assembler: None,
+            reference: scan_record.reference,
+            reference_length: scan_record.length,
+            scan_regions: scan_record.regions,
+            scan_reads: scan_record.reads,
+            scan_alignments: scan_record.alignments,
+            scan_bases_covered: scan_record.bases,
+            scan_coverage: scan_record.coverage*100.,
+            remap_regions: None,
+            remap_reads: None,
+            remap_alignments: None,
+            remap_bases_covered: None,
+            remap_coverage: None,
+            consensus_length: None,
+            consensus_missing: None,
+            consensus_completeness: None,
+            taxid: None,
+            name: None,
+            segment: None,
+            reference_description: scan_record.description
+        }
+
+    }
 
 }
 
 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct VircovRecord {
+pub struct AlignmentRecord {
     pub reference: String,
     pub regions: u64,
     pub reads: u64,
@@ -1047,7 +1064,7 @@ pub struct VircovRecord {
     pub rpm: Option<f64>
 }
 
-impl VircovRecord {
+impl AlignmentRecord {
     pub fn from(coverage: Coverage, intervals: bool, total_reads: Option<u64>) -> Self {
         
         Self {
@@ -1079,20 +1096,21 @@ impl VircovRecord {
 
 #[derive(Debug, Clone)]
 pub struct MatchedRecords {
-    scan: VircovRecord,
-    remap: Option<VircovRecord>
+    scan: AlignmentRecord,
+    remap: Option<AlignmentRecord>
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VircovSummary {
-    records: Vec<RunRecord>
+    pub records: Vec<VircovRecord>
 }
 impl VircovSummary {
     pub fn new(
         index: Option<PathBuf>, 
         aligner: Option<Aligner>,
         assembler: Option<ConsensusAssembler>, 
-        scan_records: Vec<VircovRecord>,
-        remap_records: Vec<VircovRecord>, 
+        scan_records: Vec<AlignmentRecord>,
+        remap_records: Vec<AlignmentRecord>, 
         consensus_records: Vec<ConsensusRecord>, 
         annotation_options: &AnnotationConfig,
     )-> Result<Self, VircovError> {
@@ -1107,7 +1125,7 @@ impl VircovSummary {
             // We can have multiple results with the same reference  if the reference was segmented. We therefore extract the 
             // segment description from the record annotations and append the extracted segment
 
-            let matching_records: Vec<&VircovRecord> = remap_records.iter().filter(|remap_record| {
+            let matching_records: Vec<&AlignmentRecord> = remap_records.iter().filter(|remap_record| {
                 let mut scan_id = scan_record.reference.clone();
                 let mut remap_id = remap_record.reference.clone();
                 if let Some(segment) =  scan_annotation.segment.clone() {
@@ -1164,7 +1182,7 @@ impl VircovSummary {
 
 
             summary_records.push(
-                RunRecord::from(
+                VircovRecord::from(
                     index.clone(),
                     aligner.clone(), 
                     assembler.clone(),
@@ -1182,9 +1200,20 @@ impl VircovSummary {
             records: summary_records
         })
     }
+    pub fn from_tsv(input: &PathBuf, header: bool) -> Result<Self, VircovError> {
+
+        let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(header).from_path(&input)?;
+        let mut records = Vec::new();
+        for rec in reader.deserialize() {
+            records.push(rec?);
+        }
+
+        Ok(Self { records })
+
+    }
     pub fn write_tsv(&self, output: &PathBuf, header: bool) -> Result<(), VircovError> {
 
-        let mut writer = csv::WriterBuilder::new().delimiter(b'\t').has_headers(header).from_path(&output).unwrap();
+        let mut writer = csv::WriterBuilder::new().delimiter(b'\t').has_headers(header).from_path(&output)?;
         for rec in &self.records {
             writer.serialize(rec)?;
         }
@@ -1199,7 +1228,7 @@ impl VircovSummary {
             let filename = get_file_component(&file, FileComponent::FileStem)?;
             let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(true).from_path(&file).unwrap();
             for rec in reader.deserialize() {
-                let mut record: RunRecord = rec?;
+                let mut record: VircovRecord = rec?;
 
                 if file_id {
                     record.id = Some(filename.clone());

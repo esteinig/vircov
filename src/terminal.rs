@@ -48,17 +48,17 @@ pub struct RunArgs {
     #[arg(short, long, num_args(0..))]
     pub input: Vec<PathBuf>,
     /// Output summary table of coverage and assembly metrics
-    #[arg(short, long, default_value="results.tsv")]
+    #[arg(short, long)]
     pub output: PathBuf,
     /// Reference index for aligner
     ///
     /// Depending on whether --aligner is chosen, the index is an alignment index 
     /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
-    #[arg(long, short='I', default_value="reference.fasta")]
+    #[arg(long, short='I')]
     pub index: PathBuf,
     /// Reference sequences used in aligner ()
-    #[arg(long, short='R', default_value="reference.fasta")]
-    pub reference: Option<PathBuf>,
+    #[arg(long, short='R')]
+    pub reference: PathBuf,
     /// Aligner
     #[arg(long, short='A', default_value="minimap2")]
     pub aligner: Aligner,
@@ -120,16 +120,16 @@ pub struct CoverageArgs {
     #[arg(short, long, num_args(0..))]
     pub input: Vec<PathBuf>,
     /// Output summary table of coverage metrics
-    #[arg(short, long, default_value="results.tsv")]
+    #[arg(short, long)]
     pub output: PathBuf,
     /// Reference index for aligner
     ///
     /// Depending on whether --aligner is chosen, the index is an alignment index 
     /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
-    #[arg(long, short='I', default_value="reference.fasta")]
+    #[arg(long, short='I')]
     pub index: PathBuf,
-    /// Reference sequences used in aligner ()
-    #[arg(long, short='R', default_value="reference.fasta")]
+    /// Reference sequences used in alignment (required for --zero)
+    #[arg(long, short='R')]
     pub reference: Option<PathBuf>,
     /// Aligner
     #[arg(long, short='A', default_value="minimap2")]
