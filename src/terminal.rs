@@ -23,7 +23,7 @@ pub enum Commands {
     Coverage(CoverageArgs),
     /// Subtyping of consensus assemblies against curated genotype collections
     Subtype(SubtypeArgs),
-    /// Subtyping of consensus assemblies against curated genotype collections
+    /// Abundance estimates from alignments
     Abundance(SubtypeArgs),
     /// Process NCBI Virus meta data files to attempt genotype extraction
     FilterDatabase(FilterDatabaseArgs),
