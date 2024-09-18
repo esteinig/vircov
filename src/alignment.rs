@@ -980,7 +980,7 @@ impl ReadAlignment {
             
             let reads_aligned = targets.len() as u64;
 
-            if target_len >= self.filter.min_reference_length
+            if target_len >= self.filter.min_scan_reference_length
                 && reads_aligned >= self.filter.min_scan_alignments
                 && region_filter_passed
                 && target_cov >= self.filter.min_scan_coverage

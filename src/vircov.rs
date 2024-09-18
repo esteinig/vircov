@@ -386,7 +386,7 @@ impl Vircov {
 
                     if consensus {
                         for ref_cov in &remap_coverage {
-                            if ref_cov.coverage >= 0.2 {
+                            if ref_cov.coverage >= self.config.filter.min_remap_coverage {
     
                                 // Reference output must have extension '.fa' matching auto-extension from iVar
                                 let (filter_reference, output_name) = match &ref_cov.segment {
@@ -409,7 +409,10 @@ impl Vircov {
                                         &bam.clone(), 
                                         &outdir.join(output_name), 
                                         filter_reference,
-                                        Some(format!("{} {}", ref_cov.reference, ref_cov.description))
+                                        Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
+                                        self.config.consensus.min_quality,
+                                        self.config.consensus.min_frequency,
+                                        self.config.consensus.min_depth
                                     )
                                 )?;
     
@@ -489,6 +492,7 @@ pub struct VircovConfig {
     pub reference: ReferenceConfig,
     pub filter: FilterConfig,
     pub coverage: CoverageConfig,
+    pub consensus: ConsensusConfig,
     pub subtype: SubtypeConfig
 } 
 impl VircovConfig {
@@ -518,7 +522,12 @@ impl VircovConfig {
             reference: ReferenceConfig::with_default(
                 Some(args.reference.clone())
             ),
-            filter: FilterConfig::default(),
+            consensus: ConsensusConfig::with_default_from_args(
+                args.min_consensus_depth,
+                args.min_consensus_frequency,
+                args.min_consensus_depth
+            ),
+            filter: FilterConfig::with_default(args.min_remap_coverage),
             coverage: CoverageConfig {},
             subtype: SubtypeConfig {}
         })
@@ -550,6 +559,7 @@ impl VircovConfig {
                 args.reference.clone()
             ),
             filter: FilterConfig::default(),
+            consensus: ConsensusConfig::default(), // not used
             coverage: CoverageConfig {},
             subtype: SubtypeConfig {}
         })
@@ -562,6 +572,7 @@ impl Default for VircovConfig {
             aligner: AlignerConfig::default(),
             reference: ReferenceConfig::default(),
             filter: FilterConfig::default(),
+            consensus: ConsensusConfig::default(),
             coverage: CoverageConfig {},
             subtype: SubtypeConfig {}
         }
@@ -677,12 +688,13 @@ pub struct FilterConfig {
     pub min_scan_regions: u64,
     pub min_scan_coverage: f64,
     pub min_scan_reads: u64,
-    pub min_reference_length: u64,
+    pub min_scan_reference_length: u64,
     pub min_scan_regions_coverage: Option<f64>,
     pub min_grouped_regions: u64,
     pub min_grouped_mean_coverage: f64,
     pub min_grouped_alignments: u64,
     pub min_grouped_reads: u64,
+    pub min_remap_coverage: f64
 }
 impl Default for FilterConfig {
     fn default() -> Self {
@@ -694,12 +706,35 @@ impl Default for FilterConfig {
             min_scan_regions: 0,
             min_scan_coverage: 0.,
             min_scan_reads: 0,
-            min_reference_length: 0,
+            min_scan_reference_length: 0,
             min_scan_regions_coverage: None,
             min_grouped_regions: 0,
             min_grouped_mean_coverage: 0.0,
             min_grouped_alignments: 0,
             min_grouped_reads: 0,
+            min_remap_coverage: 0.0
+        }
+    }
+}
+impl FilterConfig {
+    pub fn with_default(
+        min_remap_coverage: f64
+    ) -> Self {
+        Self {
+            min_query_length: 0,
+            min_query_coverage: 0.0,
+            min_mapq: 0,
+            min_scan_alignments: 0,
+            min_scan_regions: 0,
+            min_scan_coverage: 0.,
+            min_scan_reads: 0,
+            min_scan_reference_length: 0,
+            min_scan_regions_coverage: None,
+            min_grouped_regions: 0,
+            min_grouped_mean_coverage: 0.0,
+            min_grouped_alignments: 0,
+            min_grouped_reads: 0,
+            min_remap_coverage
         }
     }
 }
@@ -723,12 +758,23 @@ pub struct ConsensusConfig {
     pub missing: String,
 }
 impl ConsensusConfig {
-    pub fn with_default(alignment: &PathBuf, output: &PathBuf, reference: Option<String>, header: Option<String>) -> Self {
+    pub fn with_default(alignment: &PathBuf, output: &PathBuf, reference: Option<String>, header: Option<String>, min_quality: usize, min_frequency: f64, min_depth: usize) -> Self {
         Self {
             alignment: alignment.clone(),
             output: output.clone(),
             header: header.clone(),
             reference,
+            min_quality,
+            min_frequency,
+            min_depth,
+            ..Default::default()
+        }
+    }
+    pub fn with_default_from_args(min_quality: usize, min_frequency: f64, min_depth: usize) -> Self {
+        Self {
+            min_quality,
+            min_frequency,
+            min_depth,
             ..Default::default()
         }
     }
@@ -833,6 +879,21 @@ impl AnnotationConfig {
             name: Some(String::from("usual name=")),
             segment: Some(String::from("segment=")),
             segment_na: Some(String::from("N/A"))
+        }
+    }
+    pub fn with_default(
+        &self, 
+        sep: String, 
+        group: Option<String>, 
+        segment: Option<String>, 
+        segment_na: Option<String>
+    ) -> Self {
+        Self {
+            sep,
+            group,
+            segment,
+            segment_na,
+            ..Default::default()
         }
     }
 }

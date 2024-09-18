@@ -1,7 +1,7 @@
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::alignment::{Aligner, AlignmentFormat, Preset, SelectHighest};
+use crate::alignment::{Aligner, Preset, SelectHighest};
 
 /// Vircov: metagenomic diagnostics for viral genomes
 #[derive(Debug, Parser)]
@@ -17,24 +17,18 @@ pub struct App {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Alignment the scan-remap-consensus pipeline
+    /// Alignment and consensus assembly pipeline
     Run(RunArgs),
-    /// Alignment coverage from alignment
+    /// Coverage statistics from alignments
     Coverage(CoverageArgs),
-    /// Subtyping of consensus assemblies against curated genotype collections
-    Subtype(SubtypeArgs),
     /// Abundance estimates from alignments
     Abundance(SubtypeArgs),
-    /// Process NCBI Virus meta data files to attempt genotype extraction
-    FilterDatabase(FilterDatabaseArgs),
-    /// Validate genotype table order with matching sequence names at the same index
-    ValidateGenotypes(ValidateGenotypesArgs),
-    /// Process NCBI Virus meta data files to attempt genotype extraction
-    ProcessNcbi(ProcessNcbiArgs),
-    /// Process GISAID and Nextstrain files to attempt genotype extraction
-    ProcessGisaid(ProcessGisaidArgs),
-    /// Concatenate run output tables
-    Concat(ConcatArgs),
+    /// Assembly subtyping using nearest neighbor graphs
+    Subtype(SubtypeArgs),
+
+    #[clap(subcommand)]
+    /// Utilities for processing databases and outputs
+    Tools(ToolsCommands)
 }
 
 #[derive(Debug, Args)]
@@ -52,11 +46,11 @@ pub struct RunArgs {
     pub output: PathBuf,
     /// Reference index for aligner
     ///
-    /// Depending on whether --aligner is chosen, the index is an alignment index 
-    /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
+    /// Alignment index for 'bowtie2' (index), 'minimap2' (index | fasta) 
+    /// and 'strobealign' (index | fasta)
     #[arg(long, short='I')]
     pub index: PathBuf,
-    /// Reference sequences used in aligner ()
+    /// Reference sequences used in aligner (fasta)
     #[arg(long, short='R')]
     pub reference: PathBuf,
     /// Aligner
@@ -70,7 +64,7 @@ pub struct RunArgs {
     pub group_by: Option<String>,
     /// Group field separator in the reference sequence description
     #[clap(long, short = 's', long, default_value = ";")]
-    pub group_sep: String,
+    pub field_sep: String,
     /// Select a representative genome from the groups by reads or coverage
     #[clap(long, short='b', default_value="coverage")]
     pub select_by: SelectHighest,
@@ -101,13 +95,22 @@ pub struct RunArgs {
     /// Include secondary alignments
     #[clap(long)]
     pub secondary: bool,
+    /// Minimum remap coverage rquired for consensus assembly
+    #[clap(long, default_value="0.2")]
+    pub min_remap_coverage: f64,
+    /// Minimum consensus assembly read depth to call a site
+    #[clap(long, default_value="10")]
+    pub min_consensus_depth: usize,
+    /// Minimum consensus frequency to call a variant site
+    #[clap(long, default_value="0.75")]
+    pub min_consensus_frequency: f64,
+    /// Minimum base quality to consider a site
+    #[clap(long, default_value="20")]
+    pub min_consensus_quality: usize,
     /// Create consensus genome from remapping 
     #[clap(long)]
     pub no_consensus: bool,
 }
-
-
-
 
 #[derive(Debug, Args)]
 pub struct CoverageArgs {
@@ -202,6 +205,21 @@ pub struct SubtypeArgs {
     #[clap(long, short = 'k')]
     pub keep: bool,
 }
+
+
+#[derive(Debug, Subcommand)]
+pub enum ToolsCommands {
+    /// Process NCBI Virus meta data files to attempt genotype extraction
+    FilterDatabase(FilterDatabaseArgs),
+    /// Validate genotype table order with matching sequence names at the same index
+    ValidateGenotypes(ValidateGenotypesArgs),
+    /// Process NCBI Virus meta data files to attempt genotype extraction
+    ProcessNcbi(ProcessNcbiArgs),
+    /// Process GISAID and Nextstrain files to attempt genotype extraction
+    ProcessGisaid(ProcessGisaidArgs),
+    /// Concatenate run output tables
+    Concat(ConcatArgs)
+}   
 
 
 #[derive(Debug, Args)]
