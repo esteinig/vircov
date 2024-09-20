@@ -13,56 +13,8 @@ use std::io::Write;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::process::Command;
-use std::os::unix::fs::PermissionsExt;
 
 use tar::Archive;
-
-const SKANI_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/skani");
-const BLASTX_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastx");
-const BLASTN_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastn");
-const MAKEBLASTDB_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/makeblastdb");
-
-
-
-/// Writes included bytes to specified binary files within a given directory
-/// and sets execute permissions.
-///
-/// # Arguments
-///
-/// * `workdir` - The directory where the binary files should be written.
-///
-/// # Errors
-///
-/// This function will return an `io::Error` if any file or IO operation fails.
-fn write_binaries_to_directory(workdir: &Path) -> Result<(), SubtypeDatabaseError> {
-
-    // Ensure the directory exists
-    std::fs::create_dir_all(workdir)?;
-
-    // Function to create file, write data, and set execute permissions
-    fn write_and_set_exec(path: &Path, data: &[u8]) -> Result<(), SubtypeDatabaseError> {
-        let mut file = File::create(path)?;
-        file.write_all(data)?;
-        let mut perms = file.metadata()?.permissions();
-        perms.set_mode(0o755);  // Unix-like systems: Read, write, and execute for owner, read and execute for group and others
-        file.set_permissions(perms)?;
-        Ok(())
-    }
-
-    // Write BLASTX binary
-    write_and_set_exec(&workdir.join("blastx"), BLASTX_BIN_LINUX_X86_64)?;
-
-    // Write BLASTN binary
-    write_and_set_exec(&workdir.join("blastn"), BLASTN_BIN_LINUX_X86_64)?;
-
-    // Write MAKEBLASTDB binary
-    write_and_set_exec(&workdir.join("makeblastdb"), MAKEBLASTDB_BIN_LINUX_X86_64)?;
-
-    // Write SKANI binary
-    write_and_set_exec(&workdir.join("skani"), SKANI_BIN_LINUX_X86_64)?;
-
-    Ok(())
-}
 
 /*
 ========================
@@ -131,23 +83,6 @@ pub struct SubtypeDatabaseFiles {
     _fasta_nuc: PathBuf,
     db_blastn: PathBuf,
     db_blastx: PathBuf,
-}
-
-pub struct SubtypeDatabaseBinaries {
-    makeblastdb: PathBuf,
-    blastn: PathBuf,
-    blastx: PathBuf,
-    skani: PathBuf
-}
-impl SubtypeDatabaseBinaries {
-    pub fn new(outdir: &PathBuf) -> Self {
-        Self {
-            makeblastdb: outdir.join("makeblastdb"),
-            blastn: outdir.join("blastn"),
-            blastx: outdir.join("blastx"),
-            skani: outdir.join("skani"),
-        }
-    }
 }
 
 
@@ -226,8 +161,7 @@ pub struct SubtypeDatabase {
     pub path: PathBuf,
     pub protein: bool,
     pub genotypes: Vec<Genotype>,
-    pub files: SubtypeDatabaseFiles,
-    pub binaries: SubtypeDatabaseBinaries
+    pub files: SubtypeDatabaseFiles
 }
 
 impl SubtypeDatabase {
@@ -269,9 +203,6 @@ impl SubtypeDatabase {
         let db_blastx = outdir.join("db_blastx");
         let db_blastn = outdir.join("db_blastn");
 
-        log::info!("Writing BLAST binaries to working directory...");
-        write_binaries_to_directory(&outdir)?;
-
         let db = Self {
             name,
             path: outdir.to_path_buf(),
@@ -283,8 +214,7 @@ impl SubtypeDatabase {
                 _fasta_nuc: genome_fasta.clone(),
                 db_blastn: db_blastn.clone(),
                 db_blastx: db_blastx.clone(),
-            },
-            binaries: SubtypeDatabaseBinaries::new(&outdir)
+            }
         };
 
         match protein_fasta.exists() {
@@ -502,9 +432,8 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "nucl".to_string(),
         ];
-        let exec = &self.binaries.makeblastdb.display().to_string();
-        log::debug!("Running command: {} {}", &exec, &args.join(" "));
-        run_command(args, &exec)
+        log::debug!("Running command: makeblastdb {}", &args.join(" "));
+        run_command(args, "makeblastdb")
     }
     pub fn makedb_blast_prot(
         &self,
@@ -519,9 +448,8 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "prot".to_string(),
         ];
-        let exec = &self.binaries.makeblastdb.display().to_string();
-        log::debug!("Running command: {} {}", exec, &args.join(" "));
-        run_command(args, &exec)
+        log::debug!("Running command: makeblastdb {}", &args.join(" "));
+        run_command(args, "makeblastdb")
     }
     pub fn run_blastn(
         &self,
@@ -550,7 +478,7 @@ impl SubtypeDatabase {
         ];
 
         log::debug!("Running command: blastn with args {}", &args.join(" "));
-        run_command(args, &self.binaries.blastn.display().to_string())
+        run_command(args, "blastn")
     }
     pub fn run_blastx(
         &self,
@@ -579,7 +507,7 @@ impl SubtypeDatabase {
             threads.to_string(),
         ];
         log::debug!("Running command: blastx {}", &args.join(" "));
-        run_command(args, &self.binaries.blastx.display().to_string())
+        run_command(args, "blastx")
     }
 }
 
@@ -2144,12 +2072,42 @@ fn match_accessions(proteins: &[AnnotationRecord], genomes: &[AnnotationRecord])
 ///     Err(e) => println!("Error occurred: {}", e),
 /// }
 /// ```
-pub fn skani_distance_matrix(marker_compression_factor: &str, compression_factor: &str, threads: &str, fasta: &str, min_percent_identity: &str) -> Result<Vec<Vec<f64>>, SubtypeDatabaseError> {
+pub fn skani_distance_matrix(
+    fasta: &PathBuf, 
+    marker_compression_factor: usize, 
+    compression_factor: usize, 
+    threads: usize,
+    min_percent_identity: f64,
+    min_alignment_fraction: f64,
+    small_genomes: bool
+) -> Result<Vec<Vec<f64>>, SubtypeDatabaseError> {
+
+    let args = if small_genomes {
+        vec![
+            String::from("triangle"), 
+            "-i".to_string(), fasta.display().to_string(),
+            "-t".to_string(), format!("{}", threads), 
+            "-s".to_string(), format!("{:.2}", min_percent_identity),
+            "--min-af".to_string(), format!("{:.2}", min_alignment_fraction),
+            String::from("--full-matrix"), 
+            String::from("--distance"), 
+            String::from("--small-genomes"), 
+        ]
+    } else {
+        vec![
+            String::from("triangle"), 
+            "-i".to_string(), fasta.display().to_string(),
+            "-m".to_string(), format!("{}", marker_compression_factor), 
+            "-c".to_string(), format!("{}", compression_factor), 
+            "-t".to_string(), format!("{}", threads), 
+            "-s".to_string(), format!("{:.2}", min_percent_identity),
+            "--min-af".to_string(), format!("{:.2}", min_alignment_fraction),
+            String::from("--full-matrix"), 
+            String::from("--distance"), 
+        ]
+    };
     let output = Command::new("skani")
-        .args(&[
-            "triangle", "-m", marker_compression_factor, "-c", compression_factor, "-t", threads, "-i", fasta,
-            "--full-matrix", "--distance", "-s", min_percent_identity,
-        ])
+        .args(&args)
         .output()?
         .stdout;
 
@@ -2169,7 +2127,7 @@ pub fn skani_distance_matrix(marker_compression_factor: &str, compression_factor
         })
         .collect();
 
-    if matrix.len() > 0 && matrix[0].len() == matrix.len() - 1 {
+    if matrix.len() > 0 && matrix[0].len() == matrix.len() {
         Ok(matrix)
     } else {
         Err(SubtypeDatabaseError::ParseSkaniMatrix)
@@ -2177,6 +2135,58 @@ pub fn skani_distance_matrix(marker_compression_factor: &str, compression_factor
 }
 
 
+
+
+/// Writes a matrix of `f64` values to a specified file in tab-delimited format.
+///
+/// # Arguments
+///
+/// * `matrix` - A two-dimensional vector (matrix) where each inner `Vec<f64>`
+///   represents a row of the matrix. Each `f64` element is written as a tab-separated
+///   value to the file.
+/// * `file_path` - A string slice that holds the path to the file where the matrix
+///   should be written. The function will create the file if it does not exist, or
+///   overwrite the file if it already exists.
+///
+/// # Errors
+///
+/// Returns a `SubtypeDatabaseError` if there is any problem during file operations,
+/// such as failing to create or write to the file.
+///
+/// # Example
+///
+/// ```rust
+/// let matrix: Vec<Vec<f64>> = vec![
+///     vec![1.0, 2.0, 3.0],
+///     vec![4.0, 5.0, 6.0],
+///     vec![7.0, 8.0, 9.0],
+/// ];
+/// 
+/// if let Err(e) = write_matrix_to_file(matrix, "matrix_output.txt") {
+///     eprintln!("Error writing matrix to file: {:?}", e);
+/// }
+/// ```
+pub fn write_matrix_to_file(
+    matrix: Vec<Vec<f64>>, 
+    file_path: &PathBuf
+) -> Result<(), SubtypeDatabaseError> {
+    // Open the file for writing (or create it if it doesn't exist)
+    let mut file = File::create(file_path).map_err(SubtypeDatabaseError::from)?;
+
+    // Iterate through the rows of the matrix
+    for row in matrix {
+        // Convert each row into a tab-separated string
+        let row_str = row.iter()
+                         .map(|num| num.to_string())
+                         .collect::<Vec<String>>()
+                         .join("\t");
+
+        // Write the row to the file, followed by a newline
+        writeln!(file, "{}", row_str).map_err(SubtypeDatabaseError::from)?;
+    }
+
+    Ok(())
+}
 
 
 #[derive(Debug, Deserialize)]

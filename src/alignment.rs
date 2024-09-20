@@ -1,6 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
-use crate::vircov::{AlignerConfig, Annotation, AnnotationConfig, FilterConfig, ReferenceConfig, VircovRecord};
+use crate::vircov::{AlignerConfig, Annotation, FilterConfig, ReferenceConfig, VircovRecord};
 
 
 use anyhow::Result;
@@ -720,7 +720,6 @@ impl ReadAlignment {
                 AlignmentFormat::Cram  => ReadAlignment::from_bam(
                     alignment, reference, filter
                 ),
-                #[cfg(not(feature = "htslib"))]
                 _ =>  Err(VircovError::AlignmentInputFormatInvalid),
             },
             None => match alignment.extension().map(|s| s.to_str()) {

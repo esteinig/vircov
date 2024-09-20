@@ -17,7 +17,7 @@ Automated coverage statistics, genome recovery and subtyping for metagenomic dia
 
 ## Purpose
 
-`Vircov` implments two modules that address common challenges associated with identification and recovery of viral genomes for metagenomic diagnostics applications:
+`Vircov` implements two modules that address common challenges associated with identification and recovery of viral genomes for metagenomic diagnostics applications:
 
 1. Viral metagenomic diagnostics from low-abundance clinical samples can be challenging in the absence of sufficient genome coverage. `Vircov` extracts distinct non-overlapping regions from a reference alignment and generates some helpful coverage statistics. It can be used to flag potential hits without inspection of coverage plots in automated pipelines and reports. Coverage evaluations and automated selection of reference genomes for subsequent consensus assembly form the initial step in detection of viral genomes from the scan-remap pipeline in `Cerebro`.
 

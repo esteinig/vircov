@@ -9,6 +9,7 @@ use rayon::prelude::*;
 use anyhow::Result;
 use clap::Parser;
 use indexmap::IndexMap;
+use subtype::{skani_distance_matrix, write_matrix_to_file};
 use terminal::ToolsCommands;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -192,6 +193,20 @@ fn main() -> Result<(), VircovError> {
                 }
                 ToolsCommands::Concat(args) => {
                     VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
+                }
+                ToolsCommands::AniMatrix( args ) => {
+
+                    let matrix = skani_distance_matrix(
+                        &args.fasta, 
+                        args.marker_compression_factor, 
+                        args.compression_factor, 
+                        args.threads, 
+                        args.min_percent_identity,
+                        args.min_alignment_fraction,
+                        args.small_genomes
+                    )?;
+
+                    write_matrix_to_file(matrix, &args.output)?
                 }
             }
         }

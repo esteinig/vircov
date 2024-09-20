@@ -41,7 +41,6 @@ indexmap = "2.2.6"
 rayon = "1.10.0"
 chrono = "0.4.38"
 needletail = "0.5.1"
-
 rust-htslib = { version = "0.38" }
 uuid = { version = "1.10.0", features = ["v4"] }
 
