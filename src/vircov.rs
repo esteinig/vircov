@@ -15,7 +15,7 @@ use tabled::settings::{Style, Width};
 use tabled::{Table, Tabled};
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{create_dir_all, read, remove_dir_all, remove_file};
+use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
 use rayon::iter::{ParallelIterator, IntoParallelIterator};
@@ -43,26 +43,35 @@ impl Vircov {
         consensus: bool, 
         keep: bool,
         table: bool,
+        select_by: SelectHighest,
         alignment: Option<PathBuf>,
         alignment_format: Option<AlignmentFormat>
     ) -> Result<(), VircovError> {
 
-
+        log::info!("Alignment scan against reference database");
         let read_alignment = match alignment {
             Some(path) => self.alignment(&path, alignment_format)?,
             None => self.align()?
         };
 
+        log::info!("Coverage metrics computation from alignment scan");
         let coverage = read_alignment.coverage(false, false)?;
+
+        log::info!(
+            "Reference sequence groupings by header field '{}'", 
+            self.config.reference.annotation.group.clone().unwrap_or("None".to_string())
+        );
 
         let grouped = self.group(&coverage)?;
 
+        log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
             &grouped, 
             SelectHighest::Coverage,
             None
         )?;
 
+        log::info!("Starting remapping and consensus assembly for each genome");
         let (consensus, remap) = self.remap(
             &selections, 
             &self.config.outdir.clone(), 
@@ -75,6 +84,7 @@ impl Vircov {
         let scan = selections.values().flatten().cloned().collect();
         let summary = self.summary(consensus, scan, remap)?;
 
+        log::info!("Writing output table to: {}", tsv.display());
         if table { summary.print_table(true); }
         summary.write_tsv(&tsv, true)?;
 
@@ -1351,7 +1361,7 @@ pub struct SubtypeConfig {
 }
 
 /// Helper function to read lines from a file into a vector of strings.
-fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
+pub fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
     let file = std::fs::File::open(filename)?;
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
@@ -1365,7 +1375,7 @@ fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
 }
 
 /// Helper function to get supported subtypes. This could be implemented based on actual data.
-fn get_supported_subtypes() -> HashMap<&'static str, IndexMap<&'static str, Vec<&'static str>>> {
+pub fn get_supported_subtypes() -> HashMap<&'static str, IndexMap<&'static str, Vec<&'static str>>> {
     HashMap::from([
         ("rsv", IndexMap::from([
             ("RSV-A", Vec::from(["Subgroup A", "virus A isolate", "RSV-A", "RSVA", "/A/", "A-TX", "syncytial virus A"])),

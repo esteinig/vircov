@@ -9,8 +9,8 @@ use rayon::prelude::*;
 use anyhow::Result;
 use clap::Parser;
 use indexmap::IndexMap;
-use subtype::{skani_distance_matrix, write_matrix_to_file};
 use terminal::ToolsCommands;
+use vircov::{get_supported_subtypes, read_lines_to_vec};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
@@ -28,7 +28,7 @@ mod consensus;
 ///
 /// Run the application from arguments provided
 /// by the command-line interface
-fn main() -> Result<(), VircovError> {
+fn main() -> Result<()> {
 
     init_logger();
 
@@ -47,6 +47,7 @@ fn main() -> Result<(), VircovError> {
                 !args.no_consensus, 
                 args.keep, 
                 args.table,
+                args.select_by.clone(),
                 None, 
                 None
             )?;
@@ -73,6 +74,7 @@ fn main() -> Result<(), VircovError> {
         },
         Commands::Subtype(args) => {
 
+            log::info!("Preparing database for subtyping...");
             let subtype_db = SubtypeDatabase::from(
                 &args.database, 
                 &args.workdir
@@ -98,6 +100,7 @@ fn main() -> Result<(), VircovError> {
                 .collect();
         
 
+            log::info!("Creating ranked genomic neighbor typing metrics...");
             subtype_db.create_ranked_tables(
                 &args.output, 
                 &collected, 
@@ -119,35 +122,7 @@ fn main() -> Result<(), VircovError> {
             
 
                     // Messy but working in a basic way. Need better structure for the processor
-                    let subtypes = HashMap::from([
-                        ("rsv", IndexMap::from([
-                            ("RSV-A", Vec::from(["Subgroup A", "virus A isolate", "RSV-A", "RSVA", "/A/", "A-TX", "syncytial virus A"])),
-                            ("RSV-B", Vec::from(["Subgroup B", "virus B isolate", "RSV-B", "RSVB", "/B/", "B-TX", "B-WaDC", "syncytial virus B"]))
-                        ])),
-                        ("rva", IndexMap::from([
-                            ("regex", Vec::from([r"[Rr]hinovirus A([A-Za-z0-9]+)\b"])),
-                        ])),
-                        ("hpiv", IndexMap::from([
-                            ("HPIV-1", Vec::from(["parainfluenza virus 1", "respirovirus 1", "HPIV1", "hPIV1", "PIV1"])),
-                            ("HPIV-2", Vec::from(["parainfluenza virus 2", "respirovirus 2", "HPIV2", "orthorubulavirus 2", "hPIV2", "PIV2"])),
-                            ("HPIV-3", Vec::from(["parainfluenza virus 3", "respirovirus 3", "HPIV3", "hPIV3", "PIV3"])),
-                            ("HPIV-4", Vec::from(["parainfluenza virus 4", "respirovirus 4", "HPIV4", "orthorubulavirus 4", "hPIV4", "PIV4"]))
-                        ])),
-                        ("hmpv", IndexMap::from([
-                            ("HMPV-A1", Vec::from(["/A1", "type A1", "A1/"])),
-                            ("HMPV-A2", Vec::from(["/A2", "type A2", "A2/"])),
-                            ("HMPV-B1", Vec::from(["/B1", "type B1", "B1/"])),
-                            ("HMPV-B2", Vec::from(["/B2", "type B2", "B2/"])),
-                            ("HMPV-A", Vec::from(["A/HMPV/Beijing", "type A", "/A,"])),
-                            ("HMPV-B", Vec::from(["B/HMPV/Beijing", "type B", "/B,"])),
-                        ])),
-                        ("hcov", IndexMap::from([
-                            ("229E", Vec::from(["229E", "Camel alphacoronavirus"])),
-                            ("HKU1", Vec::from(["HKU1"])),
-                            ("NL63", Vec::from(["NL63"])),
-                            ("OC43", Vec::from(["OC43"])),
-                        ])),
-                    ]);
+                    let subtypes = get_supported_subtypes();
                     
                     let virus_subtypes = match subtypes.get(&args.virus.as_str()) {
                         Some(subtype_map) => subtype_map,
@@ -194,9 +169,9 @@ fn main() -> Result<(), VircovError> {
                 ToolsCommands::Concat(args) => {
                     VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
                 }
-                ToolsCommands::AniMatrix( args ) => {
+                ToolsCommands::Dist( args ) => {
 
-                    let matrix = skani_distance_matrix(
+                    let (dist, af, ids) = netview::dist::skani_distance_matrix(
                         &args.fasta, 
                         args.marker_compression_factor, 
                         args.compression_factor, 
@@ -205,8 +180,12 @@ fn main() -> Result<(), VircovError> {
                         args.min_alignment_fraction,
                         args.small_genomes
                     )?;
-
-                    write_matrix_to_file(matrix, &args.output)?
+        
+                    netview::dist::write_matrix_to_file(dist, &args.dist)?;
+        
+                    if let Some(afrac) = &args.afrac {
+                        netview::dist::write_matrix_to_file(af, &afrac)?;
+                    }
                 }
             }
         }
@@ -214,17 +193,4 @@ fn main() -> Result<(), VircovError> {
     }
 
     Ok(())
-}
-
-fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
-    let file = std::fs::File::open(filename)?;
-    let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        lines.push(line);
-    }
-
-    Ok(lines)
 }

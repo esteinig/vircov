@@ -220,7 +220,7 @@ pub enum ToolsCommands {
     /// Concatenate run output tables
     Concat(ConcatArgs),
     /// Create a pairwise distance matrix using 'skani'
-    AniMatrix(AniMatrixArgs)
+    Dist(DistArgs)
 }   
 
 
@@ -312,13 +312,16 @@ pub struct ValidateGenotypesArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct AniMatrixArgs {
+pub struct DistArgs {
     /// Genomes for pairwise distance matrix in single file (.fasta)
     #[clap(long, short = 'f')]
     pub fasta: PathBuf,
     /// Output pairwise distance matrix as tab-delimited text file 
-    #[clap(long, short = 'o')]
-    pub output: PathBuf,
+    #[clap(long, short = 'd')]
+    pub dist: PathBuf,
+    /// Output pairwise alignment fraction matrix as tab-delimited text file 
+    #[clap(long, short = 'a')]
+    pub afrac: Option<PathBuf>,
     /// Databases for subtyping
     #[clap(long, short = 'c', default_value="30")]
     pub compression_factor: usize,
@@ -329,7 +332,7 @@ pub struct AniMatrixArgs {
     #[clap(long, short = 's', default_value="80.0")]
     pub min_percent_identity: f64,
     /// Minimum alignment fraction to include pair
-    #[clap(long, short = 'a', default_value="15.0")]
+    #[clap(long, short = 'n', default_value="15.0")]
     pub min_alignment_fraction: f64,
     /// Small genomes preset
     #[clap(long, short = 'g')]

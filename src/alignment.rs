@@ -37,6 +37,18 @@ pub enum SelectHighest {
     Alignments
 }
 
+impl std::fmt::Display for SelectHighest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectHighest::Alignments => write!(f, "alignments")?,
+            SelectHighest::Coverage => write!(f, "coverage")?,
+            SelectHighest::Reads => write!(f, "reads")?
+        }
+        Ok(())
+    }
+}
+
+
 /*
 =====================
 Table display helpers

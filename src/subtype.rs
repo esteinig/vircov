@@ -13,7 +13,7 @@ use std::io::Write;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::process::Command;
-
+use netview::prelude::*;
 use tar::Archive;
 
 /*
@@ -80,7 +80,7 @@ Subtype Database
 pub struct SubtypeDatabaseFiles {
     csv: PathBuf,
     fasta_aa: PathBuf,
-    _fasta_nuc: PathBuf,
+    fasta_nuc: PathBuf,
     db_blastn: PathBuf,
     db_blastx: PathBuf,
 }
@@ -98,6 +98,8 @@ pub enum SubtypeDatabaseError {
     DatabaseFileMissing(String),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    NetviewError(#[from] netview::error::NetviewError),
     #[error("Failed to parse line: {0}")]
     LineParse(String),
     #[error("Parse integer error for record")]
@@ -128,6 +130,27 @@ pub enum SubtypeDatabaseError {
     AccessionFileError,
     #[error("data mismatch error: {0}")]
     DataMismatchError(String),
+}
+
+pub struct SkaniConfig {
+    pub compression_factor: usize,
+    pub marker_compression_factor: usize,
+    pub min_percent_identity: f64,
+    pub min_alignment_fraction: f64,
+    pub small_genomes: bool,
+    pub threads: usize,
+}
+impl Default for SkaniConfig {
+    fn default() -> Self {
+        Self {
+            compression_factor: 30,
+            marker_compression_factor: 200,
+            min_percent_identity: 80.0,
+            min_alignment_fraction: 15.0,
+            small_genomes: true,
+            threads: 2
+        }
+    }
 }
 
 pub struct AlignmentConfig {
@@ -161,7 +184,8 @@ pub struct SubtypeDatabase {
     pub path: PathBuf,
     pub protein: bool,
     pub genotypes: Vec<Genotype>,
-    pub files: SubtypeDatabaseFiles
+    pub files: SubtypeDatabaseFiles,
+    pub skani: SkaniConfig
 }
 
 impl SubtypeDatabase {
@@ -211,10 +235,11 @@ impl SubtypeDatabase {
             files: SubtypeDatabaseFiles {
                 csv: db_csv,
                 fasta_aa: fasta_aa.clone(),
-                _fasta_nuc: genome_fasta.clone(),
+                fasta_nuc: genome_fasta.clone(),
                 db_blastn: db_blastn.clone(),
                 db_blastx: db_blastx.clone(),
-            }
+            },
+            skani: SkaniConfig::default()
         };
 
         match protein_fasta.exists() {
@@ -252,7 +277,7 @@ impl SubtypeDatabase {
         let blastn_output = self.path.join(format!("{}.{}.blastn.tsv", input_name, self.name));
         let blastx_output = self.path.join(format!("{}.{}.blastx.tsv", input_name, self.name));
 
-        log::debug!("Computing average nucleotide identity and coverage...");
+        log::info!("Computing average nucleotide identity and coverage...");
         self.run_blastn(
             fasta,
             &self.files.db_blastn,
@@ -263,9 +288,9 @@ impl SubtypeDatabase {
         )?;
         
         let ani = self.compute_blastn_ani_cov(&blastn_output)?;
-        let aai =match self.protein {
+        let aai = match self.protein {
             true => {
-                log::debug!("Computing average amino acid identity and coverage...");
+                log::info!("Computing average amino acid identity and coverage...");
                 self.run_blastx(
                     fasta,
                     &self.files.db_blastx,
@@ -278,6 +303,13 @@ impl SubtypeDatabase {
             },
             false => None
         };
+        
+        log::info!("Computing mutual nearest neighbors graph...");
+
+        let combined_fasta = self.path.join(format!("{}.genomes.fasta", input_name));
+
+        self.compute_mknn_graph(fasta, &combined_fasta)?;
+
        
         let subtype_data = SubtypeSummary::from(
             &input_name, ani, aai, Some(self.genotypes.clone())
@@ -296,6 +328,31 @@ impl SubtypeDatabase {
         write_subtype_summaries_to_csv(&subtype_data, &table_output, true)?;
 
         Ok(subtype_data)
+    }
+    pub fn compute_mknn_graph(&self, fasta: &PathBuf, combined_fasta: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+
+        // Concatentate the input genome with the reference nucleotide data 
+        log::info!("Concatenating query sequences to database sequences....");
+        concatenate_fasta_files(&self.files.fasta_nuc, &[fasta], &combined_fasta)?;
+
+        let netview = Netview::new();
+
+        let (distance, af, ids) = netview.skani_distance(
+            fasta, 
+            self.skani.marker_compression_factor, 
+            self.skani.compression_factor, 
+            self.skani.threads, 
+            self.skani.min_percent_identity, 
+            self.skani.min_alignment_fraction, 
+            self.skani.small_genomes
+        )?;
+
+        let graph = netview.graph_from_vecs(distance, 30, Some(af), Some(ids))?;
+
+        
+
+
+        Ok(())
     }
     pub fn create_ranked_tables(&self, output: &PathBuf, subtype_summaries: &Vec<SubtypeSummary>, metric: &str, ranks: usize, print_ranks: bool, with_genotype: bool, protein: bool) -> Result<(), SubtypeDatabaseError> {
 
@@ -2052,143 +2109,6 @@ fn match_accessions(proteins: &[AnnotationRecord], genomes: &[AnnotationRecord])
     matches
 }
 
-
-/// Executes a system command to generate a distance matrix, and then parses
-/// and returns the matrix without the first row and column.
-///
-/// This function executes the `skani` command, which is expected to output a
-/// tab-delimited distance matrix. The first row (header) and first column (row index)
-/// are trimmed from the output, and the remaining data is returned as a symmetrical
-/// distance matrix.
-///
-/// # Examples
-///
-/// ```
-/// use vircov::subtype::skani_distance_matrix;
-///
-/// let result = skani_distance_matrix();
-/// match result {
-///     Ok(matrix) => println!("Processed matrix: {:?}", matrix),
-///     Err(e) => println!("Error occurred: {}", e),
-/// }
-/// ```
-pub fn skani_distance_matrix(
-    fasta: &PathBuf, 
-    marker_compression_factor: usize, 
-    compression_factor: usize, 
-    threads: usize,
-    min_percent_identity: f64,
-    min_alignment_fraction: f64,
-    small_genomes: bool
-) -> Result<Vec<Vec<f64>>, SubtypeDatabaseError> {
-
-    let args = if small_genomes {
-        vec![
-            String::from("triangle"), 
-            "-i".to_string(), fasta.display().to_string(),
-            "-t".to_string(), format!("{}", threads), 
-            "-s".to_string(), format!("{:.2}", min_percent_identity),
-            "--min-af".to_string(), format!("{:.2}", min_alignment_fraction),
-            String::from("--full-matrix"), 
-            String::from("--distance"), 
-            String::from("--small-genomes"), 
-        ]
-    } else {
-        vec![
-            String::from("triangle"), 
-            "-i".to_string(), fasta.display().to_string(),
-            "-m".to_string(), format!("{}", marker_compression_factor), 
-            "-c".to_string(), format!("{}", compression_factor), 
-            "-t".to_string(), format!("{}", threads), 
-            "-s".to_string(), format!("{:.2}", min_percent_identity),
-            "--min-af".to_string(), format!("{:.2}", min_alignment_fraction),
-            String::from("--full-matrix"), 
-            String::from("--distance"), 
-        ]
-    };
-    let output = Command::new("skani")
-        .args(&args)
-        .output()?
-        .stdout;
-
-    let output_str = String::from_utf8_lossy(&output);
-
-    // Regex to match non-numeric and non-tab characters (to find rows and columns).
-    let re = Regex::new(r"\t").expect("Failed to compile regex");
-
-    let matrix: Vec<Vec<f64>> = output_str
-        .lines()
-        .skip(1) // Skip the first line (header).
-        .map(|line| {
-            re.split(line)
-                .skip(1) // Skip the first column (index).
-                .filter_map(|number| number.parse::<f64>().ok())
-                .collect()
-        })
-        .collect();
-
-    if matrix.len() > 0 && matrix[0].len() == matrix.len() {
-        Ok(matrix)
-    } else {
-        Err(SubtypeDatabaseError::ParseSkaniMatrix)
-    }
-}
-
-
-
-
-/// Writes a matrix of `f64` values to a specified file in tab-delimited format.
-///
-/// # Arguments
-///
-/// * `matrix` - A two-dimensional vector (matrix) where each inner `Vec<f64>`
-///   represents a row of the matrix. Each `f64` element is written as a tab-separated
-///   value to the file.
-/// * `file_path` - A string slice that holds the path to the file where the matrix
-///   should be written. The function will create the file if it does not exist, or
-///   overwrite the file if it already exists.
-///
-/// # Errors
-///
-/// Returns a `SubtypeDatabaseError` if there is any problem during file operations,
-/// such as failing to create or write to the file.
-///
-/// # Example
-///
-/// ```rust
-/// let matrix: Vec<Vec<f64>> = vec![
-///     vec![1.0, 2.0, 3.0],
-///     vec![4.0, 5.0, 6.0],
-///     vec![7.0, 8.0, 9.0],
-/// ];
-/// 
-/// if let Err(e) = write_matrix_to_file(matrix, "matrix_output.txt") {
-///     eprintln!("Error writing matrix to file: {:?}", e);
-/// }
-/// ```
-pub fn write_matrix_to_file(
-    matrix: Vec<Vec<f64>>, 
-    file_path: &PathBuf
-) -> Result<(), SubtypeDatabaseError> {
-    // Open the file for writing (or create it if it doesn't exist)
-    let mut file = File::create(file_path).map_err(SubtypeDatabaseError::from)?;
-
-    // Iterate through the rows of the matrix
-    for row in matrix {
-        // Convert each row into a tab-separated string
-        let row_str = row.iter()
-                         .map(|num| num.to_string())
-                         .collect::<Vec<String>>()
-                         .join("\t");
-
-        // Write the row to the file, followed by a newline
-        writeln!(file, "{}", row_str).map_err(SubtypeDatabaseError::from)?;
-    }
-
-    Ok(())
-}
-
-
 #[derive(Debug, Deserialize)]
 struct NcbiGenotype {
     #[serde(rename(deserialize = "Accession"))]
@@ -2311,7 +2231,7 @@ pub fn process_ncbi_genotypes(
 ///     println!("An error occurred: {}", e);
 /// }
 /// ```
-pub fn concatenate_fasta_files(base_file: PathBuf, files_to_append: &[PathBuf], output_path: PathBuf) -> Result<(), SubtypeDatabaseError> {
+pub fn concatenate_fasta_files(base_file: &PathBuf, files_to_append: &[&PathBuf], output_path: &PathBuf) -> Result<(), SubtypeDatabaseError> {
     let mut output_file = File::create(&output_path)?;
 
     // Append base file content to the output file.
