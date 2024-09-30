@@ -13,56 +13,8 @@ use std::io::Write;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::process::Command;
-use std::os::unix::fs::PermissionsExt;
-
+use netview::prelude::*;
 use tar::Archive;
-
-const SKANI_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/skani");
-const BLASTX_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastx");
-const BLASTN_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/blastn");
-const MAKEBLASTDB_BIN_LINUX_X86_64: &'static [u8] = include_bytes!("../bin/makeblastdb");
-
-
-
-/// Writes included bytes to specified binary files within a given directory
-/// and sets execute permissions.
-///
-/// # Arguments
-///
-/// * `workdir` - The directory where the binary files should be written.
-///
-/// # Errors
-///
-/// This function will return an `io::Error` if any file or IO operation fails.
-fn write_binaries_to_directory(workdir: &Path) -> Result<(), SubtypeDatabaseError> {
-
-    // Ensure the directory exists
-    std::fs::create_dir_all(workdir)?;
-
-    // Function to create file, write data, and set execute permissions
-    fn write_and_set_exec(path: &Path, data: &[u8]) -> Result<(), SubtypeDatabaseError> {
-        let mut file = File::create(path)?;
-        file.write_all(data)?;
-        let mut perms = file.metadata()?.permissions();
-        perms.set_mode(0o755);  // Unix-like systems: Read, write, and execute for owner, read and execute for group and others
-        file.set_permissions(perms)?;
-        Ok(())
-    }
-
-    // Write BLASTX binary
-    write_and_set_exec(&workdir.join("blastx"), BLASTX_BIN_LINUX_X86_64)?;
-
-    // Write BLASTN binary
-    write_and_set_exec(&workdir.join("blastn"), BLASTN_BIN_LINUX_X86_64)?;
-
-    // Write MAKEBLASTDB binary
-    write_and_set_exec(&workdir.join("makeblastdb"), MAKEBLASTDB_BIN_LINUX_X86_64)?;
-
-    // Write SKANI binary
-    write_and_set_exec(&workdir.join("skani"), SKANI_BIN_LINUX_X86_64)?;
-
-    Ok(())
-}
 
 /*
 ========================
@@ -128,26 +80,9 @@ Subtype Database
 pub struct SubtypeDatabaseFiles {
     csv: PathBuf,
     fasta_aa: PathBuf,
-    _fasta_nuc: PathBuf,
+    fasta_nuc: PathBuf,
     db_blastn: PathBuf,
     db_blastx: PathBuf,
-}
-
-pub struct SubtypeDatabaseBinaries {
-    makeblastdb: PathBuf,
-    blastn: PathBuf,
-    blastx: PathBuf,
-    skani: PathBuf
-}
-impl SubtypeDatabaseBinaries {
-    pub fn new(outdir: &PathBuf) -> Self {
-        Self {
-            makeblastdb: outdir.join("makeblastdb"),
-            blastn: outdir.join("blastn"),
-            blastx: outdir.join("blastx"),
-            skani: outdir.join("skani"),
-        }
-    }
 }
 
 
@@ -163,6 +98,8 @@ pub enum SubtypeDatabaseError {
     DatabaseFileMissing(String),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error(transparent)]
+    NetviewError(#[from] netview::error::NetviewError),
     #[error("Failed to parse line: {0}")]
     LineParse(String),
     #[error("Parse integer error for record")]
@@ -193,6 +130,27 @@ pub enum SubtypeDatabaseError {
     AccessionFileError,
     #[error("data mismatch error: {0}")]
     DataMismatchError(String),
+}
+
+pub struct SkaniConfig {
+    pub compression_factor: usize,
+    pub marker_compression_factor: usize,
+    pub min_percent_identity: f64,
+    pub min_alignment_fraction: f64,
+    pub small_genomes: bool,
+    pub threads: usize,
+}
+impl Default for SkaniConfig {
+    fn default() -> Self {
+        Self {
+            compression_factor: 30,
+            marker_compression_factor: 200,
+            min_percent_identity: 80.0,
+            min_alignment_fraction: 15.0,
+            small_genomes: true,
+            threads: 2
+        }
+    }
 }
 
 pub struct AlignmentConfig {
@@ -227,7 +185,7 @@ pub struct SubtypeDatabase {
     pub protein: bool,
     pub genotypes: Vec<Genotype>,
     pub files: SubtypeDatabaseFiles,
-    pub binaries: SubtypeDatabaseBinaries
+    pub skani: SkaniConfig
 }
 
 impl SubtypeDatabase {
@@ -269,9 +227,6 @@ impl SubtypeDatabase {
         let db_blastx = outdir.join("db_blastx");
         let db_blastn = outdir.join("db_blastn");
 
-        log::info!("Writing BLAST binaries to working directory...");
-        write_binaries_to_directory(&outdir)?;
-
         let db = Self {
             name,
             path: outdir.to_path_buf(),
@@ -280,11 +235,11 @@ impl SubtypeDatabase {
             files: SubtypeDatabaseFiles {
                 csv: db_csv,
                 fasta_aa: fasta_aa.clone(),
-                _fasta_nuc: genome_fasta.clone(),
+                fasta_nuc: genome_fasta.clone(),
                 db_blastn: db_blastn.clone(),
                 db_blastx: db_blastx.clone(),
             },
-            binaries: SubtypeDatabaseBinaries::new(&outdir)
+            skani: SkaniConfig::default()
         };
 
         match protein_fasta.exists() {
@@ -322,7 +277,7 @@ impl SubtypeDatabase {
         let blastn_output = self.path.join(format!("{}.{}.blastn.tsv", input_name, self.name));
         let blastx_output = self.path.join(format!("{}.{}.blastx.tsv", input_name, self.name));
 
-        log::debug!("Computing average nucleotide identity and coverage...");
+        log::info!("Computing average nucleotide identity and coverage...");
         self.run_blastn(
             fasta,
             &self.files.db_blastn,
@@ -333,9 +288,9 @@ impl SubtypeDatabase {
         )?;
         
         let ani = self.compute_blastn_ani_cov(&blastn_output)?;
-        let aai =match self.protein {
+        let aai = match self.protein {
             true => {
-                log::debug!("Computing average amino acid identity and coverage...");
+                log::info!("Computing average amino acid identity and coverage...");
                 self.run_blastx(
                     fasta,
                     &self.files.db_blastx,
@@ -348,6 +303,13 @@ impl SubtypeDatabase {
             },
             false => None
         };
+        
+        log::info!("Computing mutual nearest neighbors graph...");
+
+        let combined_fasta = self.path.join(format!("{}.genomes.fasta", input_name));
+
+        self.compute_mknn_graph(fasta, &combined_fasta)?;
+
        
         let subtype_data = SubtypeSummary::from(
             &input_name, ani, aai, Some(self.genotypes.clone())
@@ -366,6 +328,31 @@ impl SubtypeDatabase {
         write_subtype_summaries_to_csv(&subtype_data, &table_output, true)?;
 
         Ok(subtype_data)
+    }
+    pub fn compute_mknn_graph(&self, fasta: &PathBuf, combined_fasta: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+
+        // Concatentate the input genome with the reference nucleotide data 
+        log::info!("Concatenating query sequences to database sequences....");
+        concatenate_fasta_files(&self.files.fasta_nuc, &[fasta], &combined_fasta)?;
+
+        let netview = Netview::new();
+
+        let (distance, af, ids) = netview.skani_distance(
+            fasta, 
+            self.skani.marker_compression_factor, 
+            self.skani.compression_factor, 
+            self.skani.threads, 
+            self.skani.min_percent_identity, 
+            self.skani.min_alignment_fraction, 
+            self.skani.small_genomes
+        )?;
+
+        let graph = netview.graph_from_vecs(distance, 30, Some(af), Some(ids))?;
+
+        
+
+
+        Ok(())
     }
     pub fn create_ranked_tables(&self, output: &PathBuf, subtype_summaries: &Vec<SubtypeSummary>, metric: &str, ranks: usize, print_ranks: bool, with_genotype: bool, protein: bool) -> Result<(), SubtypeDatabaseError> {
 
@@ -502,9 +489,8 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "nucl".to_string(),
         ];
-        let exec = &self.binaries.makeblastdb.display().to_string();
-        log::debug!("Running command: {} {}", &exec, &args.join(" "));
-        run_command(args, &exec)
+        log::debug!("Running command: makeblastdb {}", &args.join(" "));
+        run_command(args, "makeblastdb")
     }
     pub fn makedb_blast_prot(
         &self,
@@ -519,9 +505,8 @@ impl SubtypeDatabase {
             "-dbtype".to_string(),
             "prot".to_string(),
         ];
-        let exec = &self.binaries.makeblastdb.display().to_string();
-        log::debug!("Running command: {} {}", exec, &args.join(" "));
-        run_command(args, &exec)
+        log::debug!("Running command: makeblastdb {}", &args.join(" "));
+        run_command(args, "makeblastdb")
     }
     pub fn run_blastn(
         &self,
@@ -550,7 +535,7 @@ impl SubtypeDatabase {
         ];
 
         log::debug!("Running command: blastn with args {}", &args.join(" "));
-        run_command(args, &self.binaries.blastn.display().to_string())
+        run_command(args, "blastn")
     }
     pub fn run_blastx(
         &self,
@@ -579,7 +564,7 @@ impl SubtypeDatabase {
             threads.to_string(),
         ];
         log::debug!("Running command: blastx {}", &args.join(" "));
-        run_command(args, &self.binaries.blastx.display().to_string())
+        run_command(args, "blastx")
     }
 }
 
@@ -1994,8 +1979,8 @@ pub fn get_base_file_name(path: &PathBuf) -> Result<String, FileNameError> {
 /// # Examples
 ///
 /// ```
-/// use your_crate::filter_subtype_summaries;
-/// let summaries = vec![your_crate::SubtypeSummary {
+/// use vircov::filter_subtype_summaries;
+/// let summaries = vec![vircov::SubtypeSummary {
 ///     query: "query1".to_string(),
 ///     target: "target1".to_string(),
 ///     target_proteins: Some(10),
@@ -2124,61 +2109,6 @@ fn match_accessions(proteins: &[AnnotationRecord], genomes: &[AnnotationRecord])
     matches
 }
 
-
-/// Executes a system command to generate a distance matrix, and then parses
-/// and returns the matrix without the first row and column.
-///
-/// This function executes the `skani` command, which is expected to output a
-/// tab-delimited distance matrix. The first row (header) and first column (row index)
-/// are trimmed from the output, and the remaining data is returned as a symmetrical
-/// distance matrix.
-///
-/// # Examples
-///
-/// ```
-/// use vircov::subtype::skani_distance_matrix;
-///
-/// let result = skani_distance_matrix();
-/// match result {
-///     Ok(matrix) => println!("Processed matrix: {:?}", matrix),
-///     Err(e) => println!("Error occurred: {}", e),
-/// }
-/// ```
-pub fn skani_distance_matrix(marker_compression_factor: &str, compression_factor: &str, threads: &str, fasta: &str, min_percent_identity: &str) -> Result<Vec<Vec<f64>>, SubtypeDatabaseError> {
-    let output = Command::new("skani")
-        .args(&[
-            "triangle", "-m", marker_compression_factor, "-c", compression_factor, "-t", threads, "-i", fasta,
-            "--full-matrix", "--distance", "-s", min_percent_identity,
-        ])
-        .output()?
-        .stdout;
-
-    let output_str = String::from_utf8_lossy(&output);
-
-    // Regex to match non-numeric and non-tab characters (to find rows and columns).
-    let re = Regex::new(r"\t").expect("Failed to compile regex");
-
-    let matrix: Vec<Vec<f64>> = output_str
-        .lines()
-        .skip(1) // Skip the first line (header).
-        .map(|line| {
-            re.split(line)
-                .skip(1) // Skip the first column (index).
-                .filter_map(|number| number.parse::<f64>().ok())
-                .collect()
-        })
-        .collect();
-
-    if matrix.len() > 0 && matrix[0].len() == matrix.len() - 1 {
-        Ok(matrix)
-    } else {
-        Err(SubtypeDatabaseError::ParseSkaniMatrix)
-    }
-}
-
-
-
-
 #[derive(Debug, Deserialize)]
 struct NcbiGenotype {
     #[serde(rename(deserialize = "Accession"))]
@@ -2301,7 +2231,7 @@ pub fn process_ncbi_genotypes(
 ///     println!("An error occurred: {}", e);
 /// }
 /// ```
-pub fn concatenate_fasta_files(base_file: PathBuf, files_to_append: &[PathBuf], output_path: PathBuf) -> Result<(), SubtypeDatabaseError> {
+pub fn concatenate_fasta_files(base_file: &PathBuf, files_to_append: &[&PathBuf], output_path: &PathBuf) -> Result<(), SubtypeDatabaseError> {
     let mut output_file = File::create(&output_path)?;
 
     // Append base file content to the output file.

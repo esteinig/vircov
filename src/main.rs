@@ -1,154 +1,97 @@
-use crate::align::{ReadAlignment, ReadAlignmentError};
 use crate::error::VircovError;
 use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
 use crate::subtype::SubtypeDatabase;
 use crate::subtype::SubtypeSummary;
+use crate::vircov::{Vircov, VircovConfig, VircovSummary};
 
 use rayon::prelude::*;
 use anyhow::Result;
 use clap::Parser;
 use indexmap::IndexMap;
+use terminal::ToolsCommands;
+use vircov::{get_supported_subtypes, read_lines_to_vec};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
 
-mod align;
+mod alignment;
 mod covplot;
 mod error;
 mod subtype;
 mod terminal;
 mod utils;
+mod vircov;
+mod consensus;
 
 /// Vircov application
 ///
 /// Run the application from arguments provided
 /// by the command-line interface
-#[cfg(not(tarpaulin_include))]
-fn main() -> Result<(), VircovError> {
+fn main() -> Result<()> {
 
     init_logger();
 
     let terminal = App::parse();
 
     match &terminal.command {
+        Commands::Run(args) => {
+
+            let config = VircovConfig::from_run_args(args)?;
+            let vircov = Vircov::from(config)?;
+
+            vircov.run(
+                &args.output, 
+                args.parallel, 
+                args.remap_threads, 
+                !args.no_consensus, 
+                args.keep, 
+                args.table,
+                args.select_by.clone(),
+                None, 
+                None
+            )?;
+
+        },
         Commands::Coverage(args) => {
-            let verbose = match args.group_select_split {
-                Some(_) => 2, // for group refseq selection we need the tags
-                None => args.verbose,
-            };
+            
+            let config = VircovConfig::from_coverage_args(args)?;
+            let vircov = Vircov::from(config)?;
 
-            let mut align = ReadAlignment::new(&args.fasta, &args.exclude)?;
-
-            let align = align.read(
-                args.alignment.clone(),
-                args.min_len,
-                args.min_cov,
-                args.min_mapq,
-                args.alignment_format.clone(),
+            vircov.run_coverage(
+                &args.output, 
+                args.intervals, 
+                args.zero, 
+                args.table,
+                args.read_id.clone(),
+                None, 
+                None
             )?;
-
-            let mut data = align.coverage_statistics(
-                args.regions,
-                args.seq_len,
-                args.coverage,
-                args.regions_coverage,
-                args.reads,
-                args.aligned,
-                &args.group_by,
-                verbose,
-                args.zero,
-            )?;
-
-            match &args.group_by {
-                None => {
-                    if args.group_select_split.is_some() {
-                        return Err(VircovError::ReadAlignment(
-                            ReadAlignmentError::GroupSelectSplitError,
-                        ));
-                    };
-
-                    align.to_output(
-                        &mut data,
-                        None,
-                        args.table,
-                        args.header,
-                        args.group_sep.clone(),
-                        args.read_ids.clone(),
-                        args.read_ids_split.clone(),
-                        None,
-                        None,
-                        false,
-                        None,
-                        args.segment_field.clone(),
-                        args.segment_field_nan.clone(),
-                    )?;
-                }
-                Some(group_field) => {
-                    match align.target_sequences {
-                        None => {
-                            return Err(VircovError::ReadAlignment(
-                                ReadAlignmentError::GroupSequenceError,
-                            ))
-                        }
-                        Some(_) => {
-                            match args.covplot {
-                                true => {
-                                    return Err(VircovError::ReadAlignment(
-                                        ReadAlignmentError::GroupCovPlotError,
-                                    ))
-                                }
-                                false => {
-                                    // Make a clone of the original alignment data
-                                    let ungrouped_data = Some(data.clone());
-
-                                    // If reference sequences have been provided, continue with grouping outputs
-                                    let mut grouped_data = align.group_output(
-                                        &data,
-                                        args.group_regions,
-                                        args.group_coverage,
-                                        args.group_aligned,
-                                        args.group_reads,
-                                        group_field.to_string(),
-                                        args.group_sep.clone(),
-                                    )?;
-                                    align.to_output(
-                                        &mut grouped_data,
-                                        ungrouped_data,
-                                        args.table,
-                                        args.header,
-                                        args.group_sep.clone(),
-                                        args.read_ids.clone(),
-                                        args.read_ids_split.clone(),
-                                        args.group_select_by.clone(),
-                                        args.group_select_split.clone(),
-                                        args.group_select_order,
-                                        args.group_select_data.clone(),
-                                        args.segment_field.clone(),
-                                        args.segment_field_nan.clone(),
-                                    )?;
-                                }
-                            };
-                        }
-                    }
-                }
-            };
-
-            match args.covplot {
-                true => align.coverage_plots(&data, args.width)?,
-                false => {}
-            }
+            
         }
+        Commands::Abundance(args) => {
+            unimplemented!("Abundance estimates have not been implemented yet")
+        },
         Commands::Subtype(args) => {
 
-            let subtype_db = SubtypeDatabase::from(&args.database, &args.workdir)?;
-            
+            log::info!("Preparing database for subtyping...");
+            let subtype_db = SubtypeDatabase::from(
+                &args.database, 
+                &args.workdir
+            )?;
             
             log::info!("Database prepared, computing identity and coverage metrics...");
             let collected: Vec<SubtypeSummary> = args.input.clone()
                 .into_par_iter()
                 .flat_map(|fasta| {
-                    subtype_db.subtype(&fasta, args.min_cov, args.min_cov_aa, args.min_cov_prot, None, args.threads)
+                    subtype_db.subtype(
+                        &fasta, 
+                        args.min_cov, 
+                        args.min_cov_aa, 
+                        args.min_cov_prot, 
+                        None, 
+                        args.threads
+                    )
                         .unwrap_or_else(|err| {
                             log::error!("Error processing input file: {}", err);
                             Vec::new()
@@ -157,96 +100,97 @@ fn main() -> Result<(), VircovError> {
                 .collect();
         
 
-            subtype_db.create_ranked_tables(&args.output, &collected, &args.metric, args.ranks, true, args.with_genotype, subtype_db.protein)?;
+            log::info!("Creating ranked genomic neighbor typing metrics...");
+            subtype_db.create_ranked_tables(
+                &args.output, 
+                &collected, 
+                &args.metric, 
+                args.ranks, 
+                true, 
+                args.with_genotype, 
+                subtype_db.protein
+            )?;
             
             if !args.keep {
                 subtype_db.remove_workdir()?;
             };
 
         }
-        Commands::ProcessNcbi(args) => {
+        Commands::Tools( subcommand) => {
+            match subcommand {
+                ToolsCommands::ProcessNcbi(args) => {
             
 
-            // Messy but working in a basic way. Need better structure for the processor
-            let subtypes = HashMap::from([
-                ("rsv", IndexMap::from([
-                    ("RSV-A", Vec::from(["Subgroup A", "virus A isolate", "RSV-A", "RSVA", "/A/", "A-TX", "syncytial virus A"])),
-                    ("RSV-B", Vec::from(["Subgroup B", "virus B isolate", "RSV-B", "RSVB", "/B/", "B-TX", "B-WaDC", "syncytial virus B"]))
-                ])),
-                ("rva", IndexMap::from([
-                    ("regex", Vec::from([r"[Rr]hinovirus A([A-Za-z0-9]+)\b"])),
-                ])),
-                ("hpiv", IndexMap::from([
-                    ("HPIV-1", Vec::from(["parainfluenza virus 1", "respirovirus 1", "HPIV1", "hPIV1", "PIV1"])),
-                    ("HPIV-2", Vec::from(["parainfluenza virus 2", "respirovirus 2", "HPIV2", "orthorubulavirus 2", "hPIV2", "PIV2"])),
-                    ("HPIV-3", Vec::from(["parainfluenza virus 3", "respirovirus 3", "HPIV3", "hPIV3", "PIV3"])),
-                    ("HPIV-4", Vec::from(["parainfluenza virus 4", "respirovirus 4", "HPIV4", "orthorubulavirus 4", "hPIV4", "PIV4"]))
-                ])),
-                ("hmpv", IndexMap::from([
-                    ("HMPV-A1", Vec::from(["/A1", "type A1", "A1/"])),
-                    ("HMPV-A2", Vec::from(["/A2", "type A2", "A2/"])),
-                    ("HMPV-B1", Vec::from(["/B1", "type B1", "B1/"])),
-                    ("HMPV-B2", Vec::from(["/B2", "type B2", "B2/"])),
-                    ("HMPV-A", Vec::from(["A/HMPV/Beijing", "type A", "/A,"])),
-                    ("HMPV-B", Vec::from(["B/HMPV/Beijing", "type B", "/B,"])),
-                ])),
-                ("hcov", IndexMap::from([
-                    ("229E", Vec::from(["229E", "Camel alphacoronavirus"])),
-                    ("HKU1", Vec::from(["HKU1"])),
-                    ("NL63", Vec::from(["NL63"])),
-                    ("OC43", Vec::from(["OC43"])),
-                ])),
-            ]);
-            
-            let virus_subtypes = match subtypes.get(&args.virus.as_str()) {
-                Some(subtype_map) => subtype_map,
-                None => unimplemented!("No entry found for the given virus key."),
-            };
+                    // Messy but working in a basic way. Need better structure for the processor
+                    let subtypes = get_supported_subtypes();
+                    
+                    let virus_subtypes = match subtypes.get(&args.virus.as_str()) {
+                        Some(subtype_map) => subtype_map,
+                        None => unimplemented!("No entry found for the given virus key."),
+                    };
+        
+                    subtype::process_ncbi_genotypes(&args.input, &args.output, &virus_subtypes)?;
+                }
+                ToolsCommands::ProcessGisaid(args) => {
+                    
+                    let db_file = args.outdir.join("db.csv");
+                    let db_nuc_file = args.outdir.join("db_nuc.fasta");
+        
+                    subtype::process_gisaid_genotypes(&args.clades, &args.fasta, db_nuc_file, db_file, args.segment.as_deref())?;
+                }
+                ToolsCommands::FilterDatabase(args) => {
+                    
+                    let accessions = match (&args.accessions, &args.accession_file){
+                        (_, Some(file)) => read_lines_to_vec(&file).map_err(|_| subtype::SubtypeDatabaseError::AccessionFileError)?,
+                        (Some(accessions), _) => accessions.clone(),
+                        (None, None) => Vec::new()
+                    };
+        
+                    let (fasta_out, meta_out) = match (&args.output_fasta, &args.output_genotypes) {
+                        (Some(fasta), None) => (fasta.clone(), args.genotypes.with_extension("_filtered.csv")),
+                        (Some(fasta), Some(meta)) => (fasta.clone(), meta.clone()),
+                        (None, Some(meta)) => (args.fasta.with_extension("_filtered.fasta"), meta.clone()),
+                        (None, None) => (args.fasta.with_extension("_filtered.fasta"), args.genotypes.with_extension("_filtered.csv"))
+                    };
+                    
+                    subtype::filter_database(
+                        args.genotypes.clone(), 
+                        args.fasta.clone(), 
+                        meta_out, 
+                        fasta_out, 
+                        args.min_length, 
+                        args.remove_duplicates, 
+                        accessions
+                    )?;
+                }
+                ToolsCommands::ValidateGenotypes(args) => {
+                    subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
+                }
+                ToolsCommands::Concat(args) => {
+                    VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
+                }
+                ToolsCommands::Dist( args ) => {
 
-            subtype::process_ncbi_genotypes(&args.input, &args.output, &virus_subtypes)?;
+                    let (dist, af, ids) = netview::dist::skani_distance_matrix(
+                        &args.fasta, 
+                        args.marker_compression_factor, 
+                        args.compression_factor, 
+                        args.threads, 
+                        args.min_percent_identity,
+                        args.min_alignment_fraction,
+                        args.small_genomes
+                    )?;
+        
+                    netview::dist::write_matrix_to_file(dist, &args.dist)?;
+        
+                    if let Some(afrac) = &args.afrac {
+                        netview::dist::write_matrix_to_file(af, &afrac)?;
+                    }
+                }
+            }
         }
-        Commands::ProcessGisaid(args) => {
-            
-            let db_file = args.outdir.join("db.csv");
-            let db_nuc_file = args.outdir.join("db_nuc.fasta");
-            subtype::process_gisaid_genotypes(&args.clades, &args.fasta, db_nuc_file, db_file, args.segment.as_deref())?;
-        }
-        Commands::FilterDatabase(args) => {
-            
-
-            let accessions = match (&args.accessions, &args.accession_file){
-                (_, Some(file)) => read_lines_to_vec(&file).map_err(|_| subtype::SubtypeDatabaseError::AccessionFileError)?,
-                (Some(accessions), _) => accessions.clone(),
-                (None, None) => Vec::new()
-            };
-
-            let (fasta_out, meta_out) = match (&args.output_fasta, &args.output_genotypes) {
-                (Some(fasta), None) => (fasta.clone(), args.genotypes.with_extension("_filtered.csv")),
-                (Some(fasta), Some(meta)) => (fasta.clone(), meta.clone()),
-                (None, Some(meta)) => (args.fasta.with_extension("_filtered.fasta"), meta.clone()),
-                (None, None) => (args.fasta.with_extension("_filtered.fasta"), args.genotypes.with_extension("_filtered.csv"))
-            };
-            
-            subtype::filter_database(args.genotypes.clone(), args.fasta.clone(), meta_out, fasta_out, args.min_length, args.remove_duplicates, accessions)?;
-        }
-        Commands::ValidateGenotypes(args) => {
-            
-            subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
-        }
+        
     }
 
     Ok(())
-}
-
-fn read_lines_to_vec(filename: &PathBuf) -> Result<Vec<String>> {
-    let file = std::fs::File::open(filename)?;
-    let reader = BufReader::new(file);
-    let mut lines = Vec::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        lines.push(line);
-    }
-
-    Ok(lines)
 }
