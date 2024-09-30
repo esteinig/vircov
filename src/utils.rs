@@ -1,100 +1,12 @@
-use crate::align::CoverageFields;
-use crate::align::ReadAlignmentError;
+use crate::error::VircovError;
 use anyhow::Result;
 use env_logger::{fmt::Color, Builder};
 use log::{Level, LevelFilter};
-use ordered_float::OrderedFloat;
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::ffi::OsStr;
-use std::fs::File;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub fn get_sanitized_fasta_writer(
-    name: &str,
-    path: &std::path::Path,
-) -> Result<noodles::fasta::Writer<File>, ReadAlignmentError> {
-    let sanitized_name = name.replace(' ', "_");
-    let file_path = path.join(sanitized_name).with_extension("fasta");
-    let file_handle = std::fs::File::create(file_path.as_path())?;
 
-    Ok(noodles::fasta::Writer::new(file_handle))
-}
-
-/*
-========================
-ReadAlignment utilities
-========================
-*/
-
-/// Get a dictionary / map of segments grouped by their unique fields:
-///
-/// If `segment_field` = "segment=" the dictionary groupings will be for
-/// example: "segment=L": [CoverageFields, ...]
-pub fn get_grouped_segments(
-    tags: Vec<CoverageFields>,
-    segment_field: Option<String>,
-    group_sep: String,
-) -> Result<BTreeMap<String, Vec<CoverageFields>>, ReadAlignmentError> {
-    match segment_field {
-        Some(seg_field) => {
-            let mut grouped_segments: BTreeMap<String, Vec<CoverageFields>> = BTreeMap::new();
-            for tag_cov_field in tags {
-                let header_fields = tag_cov_field.description.split(&group_sep);
-
-                for field in header_fields {
-                    if field.contains(&seg_field) {
-                        match grouped_segments.entry(field.to_string()) {
-                            Entry::Occupied(mut entry) => {
-                                entry.get_mut().push(tag_cov_field.clone());
-                            }
-                            Entry::Vacant(entry) => {
-                                entry.insert(vec![tag_cov_field.clone()]);
-                            }
-                        }
-                    }
-                }
-            }
-            Ok(grouped_segments)
-        }
-        None => Err(ReadAlignmentError::GroupSelectSplitError),
-    }
-}
-
-// Select the best segments from grouped references of the same segment identifier by reads or coverage
-pub fn get_segment_selections(
-    grouped_segments: BTreeMap<String, Vec<CoverageFields>>,
-    group_select_by: Option<String>,
-) -> Result<BTreeMap<String, CoverageFields>, ReadAlignmentError> {
-    let mut selected_segments: BTreeMap<String, CoverageFields> = BTreeMap::new();
-
-    for (segment, cov_fields) in grouped_segments {
-        let selected = match group_select_by.clone() {
-            Some(value) => match value.as_str() {
-                "reads" => cov_fields.iter().max_by_key(|x| x.reads),
-                "coverage" => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                _ => return Err(ReadAlignmentError::GroupSelectByError),
-            },
-            None => return Err(ReadAlignmentError::GroupSelectByError),
-        };
-
-        match selected {
-            Some(selected_cov_field) => {
-                let sanitized_name = selected_cov_field.name.replace(' ', "_");
-                let sanitized_name = sanitized_name.trim_matches(';');
-                let segment_sanitized = segment.trim_matches(' ').to_string(); // trim whitespaces from segment field
-                let seg_name = format!("{}_{}", sanitized_name, segment_sanitized);
-                selected_segments
-                    .entry(seg_name)
-                    .or_insert_with(|| selected_cov_field.clone());
-            }
-            None => return Err(ReadAlignmentError::GroupSelectReference),
-        }
-    }
-
-    Ok(selected_segments)
-}
 
 pub fn init_logger() {
     Builder::new()
@@ -163,8 +75,67 @@ impl CompressionExt for niffler::compression::Format {
         match path.extension().map(|s| s.to_str()) {
             Some(Some("gz")) => Self::Gzip,
             Some(Some("bz") | Some("bz2")) => Self::Bzip,
-            Some(Some("lzma")) => Self::Lzma,
+            Some(Some("lzma") | Some(".xz")) => Self::Lzma,
             _ => Self::No,
         }
     }
 }
+
+/// Enum to specify the type of file component to retrieve
+pub enum FileComponent {
+    /// The full file name including the extension
+    FileName,
+    /// The file name without the extension
+    FileStem,
+}
+
+/// Extracts the specified file component from a `PathBuf` and returns it as a `String`.
+///
+/// # Arguments
+///
+/// * `path` - A `PathBuf` representing the file path.
+/// * `component` - A `FileComponent` specifying whether to get the file name or the file stem.
+///
+/// # Returns
+///
+/// * `Result<String, DatabaseError>` - A `Result` containing the specified file component as a `String`
+///   if successful, or a `DatabaseError` if an error occurs.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// use cipher::{get_file_component, FileComponent};
+///
+/// let path = PathBuf::from("/some/path/to/file.txt");
+/// match get_file_component(path, FileComponent::FileName) {
+///     Ok(file_name) => println!("File name: {}", file_name),
+///     Err(e) => eprintln!("Error: {}", e),
+/// }
+/// ```
+///
+/// ```
+/// use std::path::PathBuf;
+/// use cipher::{get_file_component, FileComponent};
+///
+/// let path = PathBuf::from("/some/path/to/file.txt");
+/// match get_file_component(path, FileComponent::FileStem) {
+///     Ok(file_stem) => println!("File stem: {}", file_stem),
+///     Err(e) => eprintln!("Error: {}", e),
+/// }
+/// ```
+pub fn get_file_component(path: &PathBuf, component: FileComponent) -> Result<String, VircovError> {
+    match component {
+        FileComponent::FileName => {
+            path.file_name()
+                .ok_or(VircovError::FileNameConversionError)
+                .and_then(|os_str| os_str.to_str().map(String::from).ok_or(VircovError::FileNameConversionError))
+        }
+        FileComponent::FileStem => {
+            path.file_stem()
+                .ok_or(VircovError::FileNameConversionError)
+                .and_then(|os_str| os_str.to_str().map(String::from).ok_or(VircovError::FileNameConversionError))
+        }
+    }
+}
+
