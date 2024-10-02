@@ -1,6 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
-use crate::vircov::{AlignerConfig, Annotation, FilterConfig, ReferenceConfig, VircovRecord};
+use crate::vircov::{AlignmentConfig, Annotation, FilterConfig, ReferenceConfig, VircovRecord};
 
 
 use anyhow::Result;
@@ -447,12 +447,12 @@ impl std::fmt::Display for Aligner {
 
 
 pub struct VircovAligner {
-    pub config: AlignerConfig,
+    pub config: AlignmentConfig,
     pub reference: ReferenceConfig,
     pub filter: FilterConfig
 }
 impl VircovAligner {
-    pub fn from(config: &AlignerConfig, reference: &ReferenceConfig, filter: &FilterConfig) -> Self {
+    pub fn from(config: &AlignmentConfig, reference: &ReferenceConfig, filter: &FilterConfig) -> Self {
         Self {
             config: config.clone(), reference: reference.clone(), filter: filter.clone()
         }

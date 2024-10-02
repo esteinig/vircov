@@ -48,7 +48,7 @@ impl Vircov {
         alignment_format: Option<AlignmentFormat>
     ) -> Result<(), VircovError> {
 
-        log::info!("Alignment scan against reference database");
+        log::info!("Alignment scan against reference database ({})", self.config.alignment.aligner);
         let read_alignment = match alignment {
             Some(path) => self.alignment(&path, alignment_format)?,
             None => self.align()?
@@ -71,7 +71,7 @@ impl Vircov {
             None
         )?;
 
-        log::info!("Starting remapping and consensus assembly for each genome");
+        log::info!("Starting remapping and consensus assembly for each genome ({})", self.config.alignment.aligner);
         let (consensus, remap) = self.remap(
             &selections, 
             &self.config.outdir.clone(), 
@@ -141,7 +141,7 @@ impl Vircov {
     ) -> Result<ReadAlignment, VircovError> {
 
         let aligner = VircovAligner::from(
-            &self.config.aligner, 
+            &self.config.alignment, 
             &&self.config.reference, 
             &self.config.filter
         );
@@ -231,10 +231,8 @@ impl Vircov {
                                 entry.insert(vec![cov.clone()]);
                             }
                         }
-                    }
-                    
+                    }   
                 }
-
             }
 
             let segmented = !grouped_segments.is_empty();
@@ -290,7 +288,7 @@ impl Vircov {
             } else {
 
                 // If not segmented, simply select the best reference sequence using the
-                // group_select_by metric and select the sequence from the header fields
+                // selection metric and select the sequence from the header fields
                 // to write to FASTA
 
                 let max = match select_by {
@@ -352,9 +350,8 @@ impl Vircov {
                     
                     let remap_id = &group;
 
-                    log::info!("Group '{}' launched remapping stage (n = {})", group, coverage.len());
+                    log::info!("Reference group '{}' launched remapping stage (n = {})", group, coverage.len());
 
-                    
                     let remap_reference = outdir.join(remap_id).with_extension("fasta");
 
                     let file_handle = std::fs::File::create(&remap_reference)?;
@@ -375,7 +372,7 @@ impl Vircov {
                     let bam = outdir.join(remap_id).with_extension("bam");
 
                     let remap_aligner = VircovAligner::from(
-                        &self.config.aligner.remap_config(
+                        &self.config.alignment.remap_config(
                             &remap_reference, 
                             None, 
                             Some(bam.clone()), 
@@ -498,7 +495,7 @@ impl Vircov {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VircovConfig {
     pub outdir: PathBuf,
-    pub aligner: AlignerConfig,
+    pub alignment: AlignmentConfig,
     pub reference: ReferenceConfig,
     pub filter: FilterConfig,
     pub coverage: CoverageConfig,
@@ -519,7 +516,7 @@ impl VircovConfig {
 
         Ok(Self {
             outdir: outdir.clone(),
-            aligner: AlignerConfig::with_default(
+            alignment: AlignmentConfig::with_default(
                 &args.input, 
                 &args.index, 
                 args.aligner.clone(), 
@@ -555,7 +552,7 @@ impl VircovConfig {
 
         Ok(Self {
             outdir: outdir.clone(),
-            aligner: AlignerConfig::with_default(
+            alignment: AlignmentConfig::with_default(
                 &args.input, 
                 &args.index, 
                 args.aligner.clone(), 
@@ -579,7 +576,7 @@ impl Default for VircovConfig {
     fn default() -> Self {
         Self {
             outdir: PathBuf::from("."),
-            aligner: AlignerConfig::default(),
+            alignment: AlignmentConfig::default(),
             reference: ReferenceConfig::default(),
             filter: FilterConfig::default(),
             consensus: ConsensusConfig::default(),
@@ -590,7 +587,7 @@ impl Default for VircovConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlignerConfig {
+pub struct AlignmentConfig {
     pub aligner: Aligner,
     pub preset: Option<Preset>,
     pub args: Option<String>,
@@ -602,7 +599,7 @@ pub struct AlignerConfig {
     pub output: Option<PathBuf>,
     pub threads: usize
 }
-impl AlignerConfig {
+impl AlignmentConfig {
     pub fn remap_config(
         &self, 
         index: &PathBuf, 
@@ -610,12 +607,15 @@ impl AlignerConfig {
         output: Option<PathBuf>, 
         threads: usize
     ) -> Self {
+        
         let mut config = self.clone();
+
         config.create_index = true;
         config.args = args;
         config.index = index.clone();
         config.threads = threads;
         config.output = output;
+
         config
     }
     pub fn with_default(
@@ -641,7 +641,7 @@ impl AlignerConfig {
         }
     }
 }
-impl Default for AlignerConfig {
+impl Default for AlignmentConfig {
     fn default() -> Self {
         Self {
             aligner: Aligner::Minimap2,
