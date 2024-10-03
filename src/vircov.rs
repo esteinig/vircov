@@ -1366,7 +1366,6 @@ impl VircovSummary {
                 }
             };
 
-
             summary_records.push(
                 VircovRecord::from(
                     index.clone(),
@@ -1380,7 +1379,7 @@ impl VircovSummary {
             )
         }
 
-        summary_records.sort_by(|a, b| b.scan_reads.cmp(&a.scan_reads));
+        summary_records.sort_by(|a, b| b.scan_alignments.cmp(&a.scan_alignments));
 
         Ok(Self {
             records: summary_records
