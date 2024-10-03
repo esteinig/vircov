@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
-use rayon::iter::{ParallelIterator, IntoParallelIterator};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 /// Vircov application structure.
 pub struct Vircov {
@@ -71,10 +71,11 @@ impl Vircov {
         )?;
 
         let group_read_files = if self.config.alignment.remap_group_reads {
-            log::info!("Reference grouping reads will be used for remapping");
+            log::info!("Extracting group reads to working directory for remapping ");
             Some(self.extract_group_reads(
                 &grouped,
-                &self.config.outdir.clone()
+                &self.config.outdir.clone(),
+                self.config.alignment.threads, // scanning threads for group read extraction
             )?)
         } else {
             log::info!("All input reads will be used for remapping");
@@ -213,28 +214,40 @@ impl Vircov {
     pub fn extract_group_reads(
         &self,
         grouped_coverage: &Vec<GroupedCoverage>,
-        outdir: &PathBuf
+        outdir: &PathBuf,
+        threads: usize
     ) -> Result<HashMap<String, Vec<PathBuf>>, VircovError> {  // group, read fastq
 
-        let mut group_reads_fastq = HashMap::new();
-        for group_coverage in grouped_coverage {
-            
-            let output = self.config.alignment.get_output_read_paths(
-                &group_coverage.group, 
-                "fastq.gz", 
-                outdir
-            )?;
 
-            group_coverage.write_group_reads(
-                self.config.alignment.input.clone(), 
-                output.clone()
-            )?;
+        let result = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("Failed to create thread pool")
+            .install(|| -> HashMap<String, Vec<PathBuf>> {
 
-            // Same keys as the group selection coverage structs for remapping
-            group_reads_fastq.insert(group_coverage.group.clone(), output);
-        }
+            let group_reads = grouped_coverage.par_iter().map(|group_coverage| -> (String, Vec<PathBuf>) {
+                
+                log::info!("Extracting reads for remapping of group: {}", group_coverage.group);
 
-        Ok(group_reads_fastq)
+                let output = self.config.alignment.get_output_read_paths(
+                    &group_coverage.group, 
+                    "fastq", 
+                    outdir
+                ).expect(&format!("Failed to get read paths for reference group remapping: {}", group_coverage.group));
+
+                group_coverage.write_group_reads(
+                    self.config.alignment.input.clone(), 
+                    output.clone()
+                ).expect(&format!("Failed to write reads for reference group remapping: {}", group_coverage.group));
+
+                // Same keys as the group selection coverage structs for remapping
+                (group_coverage.group.clone(), output)
+            }).collect::<Vec<_>>();
+
+            HashMap::from_iter(group_reads)
+        });
+
+        Ok(result)
     }
     pub fn select(
         &self,
@@ -423,7 +436,14 @@ impl Vircov {
                     let remap_coverage = remap_aligner
                         .run_aligner()?
                         .unwrap()
-                        .coverage( true, false)?;
+                        .coverage(true, false)?;
+
+                    // Remove the group reads after alignment - take up a lot of disk space
+                    if let Some(group_reads) = group_read_files {
+                        for file in group_reads {
+                            remove_file(file)?;
+                        }
+                    }
 
                     let mut consensus_records = Vec::new();
 

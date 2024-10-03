@@ -195,7 +195,7 @@ pub struct GroupedCoverage {
     /// Coverage tags for alignment regions 
     pub coverage: Vec<Coverage>,
     /// Unique read identifiers for grouped operations
-    pub read_id: Vec<String>,
+    pub read_id: HashSet<String>,
 }
 
 impl std::fmt::Display for GroupedCoverage {
@@ -221,10 +221,10 @@ impl GroupedCoverage {
             mean_coverage: 0.,
             max_coverage: 0.,
             coverage: Vec::new(),
-            read_id: Vec::new(),
+            read_id: HashSet::new(),
         };
         let num_cov = coverage.len();
-        let mut ureads: Vec<String> = Vec::new();
+        let mut ureads: HashSet<String> = HashSet::new();
 
 
         grouped_coverage.max_coverage = match coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)) {
@@ -241,16 +241,14 @@ impl GroupedCoverage {
             grouped_coverage.coverage.push(field.clone());
 
             for read in &field.read_id {
-                ureads.push(read.to_string())
+                ureads.insert(read.to_string());
             }
         }
 
         grouped_coverage.mean_coverage /= num_cov as f64;
 
-        let unique_reads_grouped: Vec<String> = ureads.iter().unique().map(|x| x.to_string()).collect();
-
-        grouped_coverage.total_reads = unique_reads_grouped.len() as u64;
-        grouped_coverage.read_id = unique_reads_grouped;
+        grouped_coverage.total_reads = ureads.len() as u64;
+        grouped_coverage.read_id = ureads;
 
         Ok(grouped_coverage)
     }
@@ -263,7 +261,7 @@ impl GroupedCoverage {
                 fastq_in, 
                 fastq_out, 
                 niffler::compression::Level::Six, 
-                None
+                None // infer from extension
             )?;
 
             while let Some(record) = reader.next() {

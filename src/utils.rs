@@ -79,7 +79,7 @@ impl CompressionExt for niffler::compression::Format {
         match path.extension().map(|s| s.to_str()) {
             Some(Some("gz")) => Self::Gzip,
             Some(Some("bz") | Some("bz2")) => Self::Bzip,
-            Some(Some("lzma") | Some(".xz")) => Self::Lzma,
+            Some(Some("lzma") | Some("xz")) => Self::Lzma,
             _ => Self::No,
         }
     }
