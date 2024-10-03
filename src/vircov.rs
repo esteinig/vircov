@@ -58,10 +58,9 @@ impl Vircov {
         let coverage = read_alignment.coverage(false, false)?;
 
         log::info!(
-            "Reference sequence groupings by header field '{}'", 
+            "Reference sequence group determination using '{}' header field", 
             self.config.reference.annotation.group.clone().unwrap_or("None".to_string())
         );
-
         let grouped = self.group(&coverage)?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
@@ -71,9 +70,22 @@ impl Vircov {
             None
         )?;
 
+        let group_read_files = if self.config.alignment.remap_group_reads {
+            log::info!("Reference grouping reads will be used for remapping");
+            Some(self.extract_group_reads(
+                &grouped,
+                &self.config.outdir.clone()
+            )?)
+        } else {
+            log::info!("All input reads will be used for remapping");
+            None
+        };
+        
+
         log::info!("Starting remapping and consensus assembly for each genome ({})", self.config.alignment.aligner);
         let (consensus, remap) = self.remap(
             &selections, 
+            group_read_files,
             &self.config.outdir.clone(), 
             parallel, 
             threads, 
@@ -177,12 +189,14 @@ impl Vircov {
 
         let mut grouped_coverage_all: Vec<GroupedCoverage> = Vec::new();
         for (group, coverage) in coverage_groups {
+            
             let group = group.trim().replace(
                 self.config.reference.annotation.group
                     .as_ref()
                     .unwrap(),
                  ""
             ); // TODO
+
             let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
 
             if grouped_coverage_data.total_regions >= self.config.filter.min_grouped_regions
@@ -195,6 +209,32 @@ impl Vircov {
         }
 
         Ok(grouped_coverage_all)
+    }
+    pub fn extract_group_reads(
+        &self,
+        grouped_coverage: &Vec<GroupedCoverage>,
+        outdir: &PathBuf
+    ) -> Result<HashMap<String, Vec<PathBuf>>, VircovError> {  // group, read fastq
+
+        let mut group_reads_fastq = HashMap::new();
+        for group_coverage in grouped_coverage {
+            
+            let output = self.config.alignment.get_output_read_paths(
+                &group_coverage.group, 
+                "fastq.gz", 
+                outdir
+            )?;
+
+            group_coverage.write_group_reads(
+                self.config.alignment.input.clone(), 
+                output.clone()
+            )?;
+
+            // Same keys as the group selection coverage structs for remapping
+            group_reads_fastq.insert(group_coverage.group.clone(), output);
+        }
+
+        Ok(group_reads_fastq)
     }
     pub fn select(
         &self,
@@ -213,9 +253,7 @@ impl Vircov {
 
         let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
 
-
         for group_coverage in grouped_coverage {
-
             let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
 
             for cov in &group_coverage.coverage {
@@ -327,6 +365,7 @@ impl Vircov {
     pub fn remap(
         &self, 
         selections: &HashMap<String, Vec<Coverage>>, 
+        group_read_files: Option<HashMap<String, Vec<PathBuf>>>,
         outdir: &PathBuf,
         parallel: usize, 
         threads: usize,
@@ -348,26 +387,22 @@ impl Vircov {
                 .into_par_iter()
                 .map(|(group, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError> {
                     
-                    let remap_id = &group;
+                    let remap_id = group;
+
+                    let group_read_files = match &group_read_files {
+                        Some(group_read_map) => group_read_map.get(remap_id),
+                        None => None
+                    };
 
                     log::info!("Reference group '{}' launched remapping stage (n = {})", group, coverage.len());
 
                     let remap_reference = outdir.join(remap_id).with_extension("fasta");
-
-                    let file_handle = std::fs::File::create(&remap_reference)?;
-                    let mut writer = noodles::fasta::Writer::new(file_handle);
-
-                    let refseqs: Vec<&noodles::fasta::Record> = coverage
-                        .iter()
-                        .map(|ref_cov| {
-                            refs.get(&ref_cov.reference)
-                                .ok_or(VircovError::AlignmentInputFormatInvalid)
-                        })
-                        .collect::<Result<_, _>>()?;
-
-                    for seq in refseqs {
-                        writer.write_record(seq)?;
-                    }
+                    
+                    self.extract_remap_sequences(
+                        &remap_reference, 
+                        coverage, 
+                        refs
+                    )?;
 
                     let bam = outdir.join(remap_id).with_extension("bam");
 
@@ -375,6 +410,7 @@ impl Vircov {
                         &self.config.alignment.remap_config(
                             &remap_reference, 
                             None, 
+                            group_read_files.cloned(),
                             Some(bam.clone()), 
                             threads
                         ),
@@ -460,6 +496,31 @@ impl Vircov {
             Ok((consensus_data, remap_data))
         })
 
+    }
+    fn extract_remap_sequences(
+        &self, 
+        remap_fasta: &PathBuf, 
+        coverage: &Vec<Coverage>, 
+        refs: &HashMap<String, Record>
+    ) -> Result<(), VircovError> {
+
+
+        let file_handle = std::fs::File::create(&remap_fasta)?;
+        let mut writer = noodles::fasta::Writer::new(file_handle);
+
+        let refseqs: Vec<&noodles::fasta::Record> = coverage
+            .iter()
+            .map(|ref_cov| {
+                refs.get(&ref_cov.reference)
+                    .ok_or(VircovError::AlignmentInputFormatInvalid)
+            })
+            .collect::<Result<_, _>>()?;
+
+        for seq in refseqs {
+            writer.write_record(seq)?;
+        }
+
+        Ok(())
     }
     pub fn summary(
         &self, 
@@ -597,18 +658,32 @@ pub struct AlignmentConfig {
     pub create_index: bool,
     pub secondary: bool,
     pub output: Option<PathBuf>,
-    pub threads: usize
+    pub threads: usize,
+    pub remap_group_reads: bool
 }
 impl AlignmentConfig {
     pub fn remap_config(
         &self, 
         index: &PathBuf, 
         args: Option<String>,
+        input: Option<Vec<PathBuf>>,
         output: Option<PathBuf>, 
-        threads: usize
+        threads: usize,
     ) -> Self {
         
         let mut config = self.clone();
+
+        // Input read files are provided explicitly
+        // for example from group-extracted read files
+
+        // Otherwise user configured input files 
+        // for the initial alignment (all reads)
+        // are used
+
+        if let Some(input) = input {
+            config.input = input;
+        };
+
 
         config.create_index = true;
         config.args = args;
@@ -640,6 +715,21 @@ impl AlignmentConfig {
             ..Default::default()
         }
     }
+    pub fn get_output_read_paths(&self, id: &str, ext: &str, outdir: &PathBuf) -> Result<Vec<PathBuf>, VircovError> {
+
+        // Paired-end short reads
+        if self.paired_end {
+            return Ok(vec![
+                outdir.join(format!("{id}_R1.{ext}")),
+                outdir.join(format!("{id}_R2.{ext}"))
+            ])
+        } else {
+            return Ok(vec![
+                outdir.join(format!("{id}.{ext}")),
+            ])
+        }
+
+    }
 }
 impl Default for AlignmentConfig {
     fn default() -> Self {
@@ -653,7 +743,8 @@ impl Default for AlignmentConfig {
             secondary: false,
             index: PathBuf::from("reference.fasta"),
             output: Some(PathBuf::from("test.sam")),
-            threads: 8
+            threads: 8,
+            remap_group_reads: true
         }
     }
 }

@@ -1,5 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
+use crate::utils::get_niffler_fastx_reader_writer;
 use crate::vircov::{AlignmentConfig, Annotation, FilterConfig, ReferenceConfig, VircovRecord};
 
 
@@ -11,6 +12,7 @@ use ordered_float::OrderedFloat;
 
 
 use rust_htslib::bam::ext::BamRecordExtensions;
+use rust_htslib::htslib::htsExactFormat_fastq_format;
 use rust_htslib::{bam, bam::record::Cigar, bam::HeaderView, bam::Read};
 use std::process::{ChildStdout, Command, Output, Stdio};
 use std::str::from_utf8;
@@ -252,6 +254,39 @@ impl GroupedCoverage {
 
         Ok(grouped_coverage)
     }
+    pub fn write_group_reads(&self, input: Vec<PathBuf>, output: Vec<PathBuf>) -> Result<(), VircovError> {
+
+        for (i, fastq_in) in input.iter().enumerate() {
+            let fastq_out = &output[i];
+            
+            let (mut reader, mut writer) = get_niffler_fastx_reader_writer(
+                fastq_in, 
+                fastq_out, 
+                niffler::compression::Level::Six, 
+                None
+            )?;
+
+            while let Some(record) = reader.next() {
+                let record = record?;
+
+                let id = std::str::from_utf8(record.id())?
+                    .split_whitespace()
+                    .collect::<Vec<&str>>()[0]
+                    .to_string();
+
+                if self.read_id.contains(&id) {
+                    record.write(&mut writer, None)?;
+                }
+
+            }
+
+            writer.flush()?;
+
+        }
+
+        Ok(())
+
+    }
 }
 
 /// A struct for computed output fields for display
@@ -311,6 +346,7 @@ impl CoverageTableFields {
 Alignment parsing and interval extraction
 ==========================================
 */
+
 
 type TargetIntervals = Vec<(String, Lapper<usize, String>)>;
 

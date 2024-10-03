@@ -146,5 +146,10 @@ pub enum VircovError {
     /// the consensus sequnces for each segment in the pipeline)
     #[error("multiple coverage references found for reference: {0}")]
     CoverageMatchNotIdentifiable(String),
+
+
+    /// Indicates failure to get output read paths based on input reads
+    #[error("invalid number of input read files: {0}")]
+    NumberInputReadFilesInvalid(usize),
     
 }
