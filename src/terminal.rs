@@ -107,9 +107,12 @@ pub struct RunArgs {
     /// Minimum base quality to consider a site
     #[clap(long, default_value="20")]
     pub min_consensus_quality: usize,
-    /// Create consensus genome from remapping 
+    /// Do not create consensus genome from remapping stage
     #[clap(long)]
     pub no_consensus: bool,
+    /// Remap all input reads instead of the grouped reads
+    #[clap(long)]
+    pub remap_all: bool,
 }
 
 #[derive(Debug, Args)]

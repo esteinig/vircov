@@ -585,7 +585,8 @@ impl VircovConfig {
                 false, 
                 args.secondary,
                 Some(outdir.join("scan.bam")),
-                args.scan_threads
+                args.scan_threads,
+                !args.remap_all
             ),
             reference: ReferenceConfig::with_default(
                 Some(args.reference.clone())
@@ -621,7 +622,8 @@ impl VircovConfig {
                 false, 
                 args.secondary,
                 Some(outdir.join("scan.bam")),
-                args.threads
+                args.threads,
+                false
             ),
             reference: ReferenceConfig::with_default(
                 args.reference.clone()
@@ -701,7 +703,8 @@ impl AlignmentConfig {
         create_index: bool, 
         secondary: bool, 
         output: Option<PathBuf>, 
-        threads: usize
+        threads: usize,
+        remap_group_reads: bool
     ) -> Self {
         Self {
             input: input.clone(),
@@ -712,6 +715,7 @@ impl AlignmentConfig {
             create_index,
             secondary,
             threads,
+            remap_group_reads,
             ..Default::default()
         }
     }
