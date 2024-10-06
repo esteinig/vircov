@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::alignment::{Aligner, Preset, SelectHighest};
+use crate::{alignment::{Aligner, Preset, SelectHighest}, annotation::AnnotationPreset};
 
 /// Vircov: metagenomic diagnostics for viral genomes
 #[derive(Debug, Parser)]
@@ -213,6 +213,8 @@ pub struct SubtypeArgs {
 #[derive(Debug, Subcommand)]
 pub enum ToolsCommands {
     /// Process NCBI Virus meta data files to attempt genotype extraction
+    AnnotateDatabase(AnnotateDatabaseArgs),
+    /// Process NCBI Virus meta data files to attempt genotype extraction
     FilterDatabase(FilterDatabaseArgs),
     /// Validate genotype table order with matching sequence names at the same index
     ValidateGenotypes(ValidateGenotypesArgs),
@@ -220,10 +222,8 @@ pub enum ToolsCommands {
     ProcessNcbi(ProcessNcbiArgs),
     /// Process GISAID and Nextstrain files to attempt genotype extraction
     ProcessGisaid(ProcessGisaidArgs),
-    /// Concatenate run output tables
-    Concat(ConcatArgs),
-    /// Create a pairwise distance matrix using 'skani'
-    Dist(DistArgs)
+    /// Concatenate output tables
+    ConcatOutput(ConcatArgs)
 }   
 
 
@@ -272,6 +272,29 @@ pub struct ConcatArgs {
     /// Add the file stem as identifier to column
     #[clap(long, short = 'f')]
     pub file_id: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AnnotateDatabaseArgs {
+    /// Vircov database sequence file (.fasta) 
+    #[clap(long, short = 'f')]
+    pub fasta: PathBuf,
+    /// Vircov database sequence annotation file (.tsv)
+    /// 
+    /// Required columns: id (string, sequence identifier, required value), bin (string, binning variable, required value), 
+    /// segment (string, segment annotation, optional value), description (string, sequence description, optional value)
+    #[clap(long, short = 'a')]
+    pub annotations: PathBuf,
+    /// Annotated database sequence file (.fasta)
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+    /// Annotation configuration preset
+    #[clap(long, short = 'p', default_value="default")]
+    pub preset: AnnotationPreset,
+    /// Skipped sequence identifiers for which provided annotations were missing (.tsv)
+    #[clap(long, short = 's')]
+    pub skipped: Option<PathBuf>,
+    
 }
 
 

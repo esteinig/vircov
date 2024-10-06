@@ -6,3 +6,4 @@ pub mod terminal;
 pub mod utils;
 pub mod vircov;
 pub mod consensus;
+pub mod annotation;

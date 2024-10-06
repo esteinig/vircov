@@ -1,13 +1,15 @@
 use crate::error::VircovError;
 use crate::vircov::Vircov;
 use anyhow::Result;
+use csv::{Reader, ReaderBuilder, Writer, WriterBuilder};
 use env_logger::{fmt::Color, Builder};
 use log::{Level, LevelFilter};
 use needletail::{parse_fastx_file, FastxReader};
-use niffler::get_reader;
+use niffler::{get_reader, get_writer};
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 
@@ -143,6 +145,20 @@ pub fn get_file_component(path: &PathBuf, component: FileComponent) -> Result<St
     }
 }
 
+pub fn get_niffler_fastx_writer(output: &PathBuf) -> Result<Box<dyn std::io::Write>, VircovError> {
+
+    let file: File = File::create(output)?;
+    let file_handle = BufWriter::new(file);
+    let fmt = niffler::Format::from_path(&output);
+
+    let writer = niffler::get_writer(
+        Box::new(file_handle), 
+        fmt,
+        niffler::compression::Level::Six
+    )?;
+
+    Ok(writer)
+}
 
 // Utility function to get a Needletail reader and Niffler compressed/uncompressed writer
 pub fn get_niffler_fastx_reader_writer(
@@ -194,3 +210,62 @@ pub fn parse_fastx_file_with_check<P: AsRef<Path>>(path: P) -> Result<Option<Box
     }
 }
 
+pub fn get_tsv_reader(file: &Path, flexible: bool) -> Result<Reader<Box<dyn Read>>, VircovError> {
+
+    let buf_reader = BufReader::new(File::open(&file)?);
+    let (reader, _format) = get_reader(Box::new(buf_reader))?;
+
+    let csv_reader = ReaderBuilder::new()
+        .delimiter(b'\t')
+        .flexible(flexible) // Allows records with a different number of fields
+        .from_reader(reader);
+
+    Ok(csv_reader)
+}
+
+pub fn get_tsv_writer(file: &Path,) -> Result<Writer<Box<dyn Write>>, VircovError> {
+    
+    let buf_writer = BufWriter::new(File::create(&file)?);
+    let writer = get_writer(Box::new(buf_writer), niffler::Format::from_path(file), niffler::compression::Level::Six)?;
+
+    let csv_writer = WriterBuilder::new()
+        .delimiter(b'\t')
+        .from_writer(writer);
+
+    Ok(csv_writer)
+}
+
+pub fn write_tsv<T: Serialize>(data: &Vec<T>, file: &Path) -> Result<(), VircovError> {
+
+    let mut writer = get_tsv_writer(file)?;
+
+    for value in data {
+        // Serialize each value in the vector into the writer
+        writer.serialize(&value)?;
+    }
+
+    // Flush and complete writing
+    writer.flush()?;
+    Ok(())
+}
+
+pub fn read_tsv<T: for<'de>Deserialize<'de>>(file: &Path, flexible: bool) -> Result<Vec<T>, VircovError> {
+
+    let mut reader = get_tsv_reader(file, flexible)?;
+
+    let mut records = Vec::new();
+    for record in reader.deserialize() {
+        records.push(record?)
+    }
+
+    Ok(records)
+}
+
+
+pub fn get_seq_id(id: &[u8]) -> Result<String, VircovError> {
+    let header = std::str::from_utf8(id)?;
+    let header_components = header.split_whitespace().collect::<Vec<&str>>();
+    let id = header_components[0].to_string();
+
+    Ok(id)
+}

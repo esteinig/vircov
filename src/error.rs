@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 use crate::{alignment::Aligner, consensus::ConsensusAssembler};
@@ -151,5 +153,10 @@ pub enum VircovError {
     /// Indicates failure to get output read paths based on input reads
     #[error("invalid number of input read files: {0}")]
     NumberInputReadFilesInvalid(usize),
+
+
+    /// Indicates failure attempting to read an empty sequence file
+    #[error("empty sequence file: {0}")]
+    FastaFileIsEmpty(PathBuf),
     
 }

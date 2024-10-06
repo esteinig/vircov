@@ -1,19 +1,16 @@
-use crate::error::VircovError;
 use crate::terminal::{App, Commands};
 use crate::utils::init_logger;
 use crate::subtype::SubtypeDatabase;
 use crate::subtype::SubtypeSummary;
 use crate::vircov::{Vircov, VircovConfig, VircovSummary};
+use crate::annotation::{AnnotationConfig, AnnotationPreset, DatabaseAnnotation};
 
 use rayon::prelude::*;
 use anyhow::Result;
 use clap::Parser;
-use indexmap::IndexMap;
 use terminal::ToolsCommands;
 use vircov::{get_supported_subtypes, read_lines_to_vec};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::io::{BufRead, BufReader};
+
 
 mod alignment;
 mod covplot;
@@ -23,6 +20,7 @@ mod terminal;
 mod utils;
 mod vircov;
 mod consensus;
+mod annotation;
 
 /// Vircov application
 ///
@@ -166,26 +164,22 @@ fn main() -> Result<()> {
                 ToolsCommands::ValidateGenotypes(args) => {
                     subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
                 }
-                ToolsCommands::Concat(args) => {
+                ToolsCommands::ConcatOutput(args) => {
                     VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
-                }
-                ToolsCommands::Dist( args ) => {
+                },
+                ToolsCommands::AnnotateDatabase(args) => {
 
-                    let (dist, af, ids) = netview::dist::skani_distance_matrix(
-                        &args.fasta, 
-                        args.marker_compression_factor, 
-                        args.compression_factor, 
-                        args.threads, 
-                        args.min_percent_identity,
-                        args.min_alignment_fraction,
-                        args.small_genomes
+                    let dba = DatabaseAnnotation::new(
+                        &args.annotations, 
+                        AnnotationConfig::from_preset(args.preset.clone())
                     )?;
-        
-                    netview::dist::write_matrix_to_file(dist, &args.dist)?;
-        
-                    if let Some(afrac) = &args.afrac {
-                        netview::dist::write_matrix_to_file(af, &afrac)?;
-                    }
+
+                    dba.annotate(
+                        &args.fasta, 
+                        &args.output, 
+                        args.skipped.clone()
+                    )?;
+
                 }
             }
         }
