@@ -63,6 +63,7 @@ impl VircovConsensus {
         Ok(output)
     }
     fn run_ivar(&self) -> Result<Vec<ConsensusRecord>, VircovError> {
+
         let assembler_args = self.config.args.as_deref().unwrap_or("");
         let mpileup_args = self.config.mpileup.as_deref().unwrap_or("");
 
@@ -91,6 +92,7 @@ impl VircovConsensus {
         );
 
         self.run_command(&cmd)?;
+       
 
         Ok(self.parse_consensus_sequence(&self.config.output)?)
     }

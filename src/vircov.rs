@@ -449,25 +449,27 @@ impl Vircov {
                             if ref_cov.coverage >= self.config.filter.min_remap_coverage {
     
                                 // Reference output must have extension '.fa' matching auto-extension from iVar
-                                let (filter_reference, output_name) = match &ref_cov.segment {
+                                let (filter_reference, consensus_name, variants_name) = match &ref_cov.segment {
                                     Some(segment) => {
                                         let seg = self.config.reference.annotation.segment_name_file(segment);
                                         (
                                             Some(ref_cov.reference.clone()), 
-                                            format!("{bin}.{seg}.consensus.fa")
+                                            format!("{bin}.{seg}.consensus.fa"),
+                                            format!("{bin}.{seg}.variants.tsv"),
                                         )
                                     }, 
                                     None => (
                                         None, 
-                                        format!("{bin}.nan.consensus.fa")
+                                        format!("{bin}.nan.consensus.fa"),
+                                        format!("{bin}.nan.variants.tsv"),
                                     )
                                 };
     
-                                log::info!("Creating consensus assembly from bin alignment '{bin}': {output_name}");
+                                log::info!("Creating consensus assembly from bin alignment '{bin}': {consensus_name}");
                                 let consensus = VircovConsensus::new(
                                     ConsensusConfig::with_default(
                                         &bam.clone(), 
-                                        &outdir.join(output_name), 
+                                        &outdir.join(consensus_name), 
                                         filter_reference,
                                         Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
                                         self.config.consensus.min_quality,
@@ -520,7 +522,6 @@ impl Vircov {
         coverage: &Vec<Coverage>, 
         refs: &HashMap<String, Record>
     ) -> Result<(), VircovError> {
-
 
         let file_handle = std::fs::File::create(&remap_fasta)?;
         let mut writer = noodles::fasta::Writer::new(file_handle);
@@ -576,8 +577,8 @@ pub struct VircovConfig {
     pub alignment: AlignmentConfig,
     pub reference: ReferenceConfig,
     pub filter: FilterConfig,
-    pub coverage: CoverageConfig,
     pub consensus: ConsensusConfig,
+    pub haplotype: HaplotypeConfig,
     pub subtype: SubtypeConfig
 } 
 impl VircovConfig {
@@ -615,7 +616,7 @@ impl VircovConfig {
                 args.min_consensus_depth
             ),
             filter: FilterConfig::with_default(args.min_remap_coverage),
-            coverage: CoverageConfig {},
+            haplotype: HaplotypeConfig::default(),
             subtype: SubtypeConfig {}
         })
     }
@@ -649,7 +650,7 @@ impl VircovConfig {
             ),
             filter: FilterConfig::default(),
             consensus: ConsensusConfig::default(), // not used
-            coverage: CoverageConfig {},
+            haplotype: HaplotypeConfig::default(), // not used
             subtype: SubtypeConfig {}
         })
     }
@@ -662,7 +663,7 @@ impl Default for VircovConfig {
             reference: ReferenceConfig::default(),
             filter: FilterConfig::default(),
             consensus: ConsensusConfig::default(),
-            coverage: CoverageConfig {},
+            haplotype: HaplotypeConfig::default(),
             subtype: SubtypeConfig {}
         }
     }
@@ -864,9 +865,41 @@ impl FilterConfig {
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CoverageConfig {
+pub struct HaplotypeConfig {
+    pub enabled: bool,
+    pub alignment: PathBuf,
+    pub fasta: PathBuf,
+    pub output: PathBuf,
+    pub min_var_frequency: f64,
 }
-
+impl HaplotypeConfig {
+    pub fn with_default(
+        enabled: bool,
+        alignment: PathBuf,
+        fasta: PathBuf,
+        output: PathBuf,
+        min_var_frequency: f64,
+    ) -> Self {
+        Self {
+            enabled,
+            alignment,
+            fasta,
+            output,
+            min_var_frequency
+        }
+    }
+}
+impl Default for HaplotypeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            alignment: PathBuf::from(""),
+            fasta: PathBuf::from(""),
+            output: PathBuf::from(""),
+            min_var_frequency: 0.05
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct ConsensusConfig {
@@ -883,7 +916,15 @@ pub struct ConsensusConfig {
     pub missing: String,
 }
 impl ConsensusConfig {
-    pub fn with_default(alignment: &PathBuf, output: &PathBuf, reference: Option<String>, header: Option<String>, min_quality: usize, min_frequency: f64, min_depth: usize) -> Self {
+    pub fn with_default(
+        alignment: &PathBuf, 
+        output: &PathBuf, 
+        reference: Option<String>, 
+        header: Option<String>, 
+        min_quality: usize, 
+        min_frequency: f64, 
+        min_depth: usize
+    ) -> Self {
         Self {
             alignment: alignment.clone(),
             output: output.clone(),
@@ -907,7 +948,7 @@ impl ConsensusConfig {
 impl Default for ConsensusConfig {
     fn default() -> Self {
         Self {
-            alignment: PathBuf::from("remap.sam"),
+            alignment: PathBuf::from(""),
             output: PathBuf::from("remap.consensus.fa"), // must be .fa for Ivar
             assembler: ConsensusAssembler::Ivar,
             reference: None,

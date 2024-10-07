@@ -81,8 +81,6 @@ impl CovPlot {
             segments: tagged_segments,
         })
     }
-
-    #[cfg(not(tarpaulin_include))]
     // Prints the segmented coverage plot
     pub fn to_console(
         &self,
@@ -115,7 +113,6 @@ impl CovPlot {
 }
 
 #[cfg(test)]
-#[cfg(not(tarpaulin_include))]
 mod tests {
 
     use super::*;

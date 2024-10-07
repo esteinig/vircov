@@ -50,7 +50,7 @@ pub struct RunArgs {
     /// and 'strobealign' (index | fasta)
     #[arg(long, short='I')]
     pub index: PathBuf,
-    /// Reference sequences used in aligner (fasta)
+    /// Reference sequences with header annotations for binning
     #[arg(long, short='R')]
     pub reference: PathBuf,
     /// Aligner
@@ -65,7 +65,7 @@ pub struct RunArgs {
     /// Select a representative genome from the groups by reads or coverage
     #[clap(long, short='b', default_value="coverage")]
     pub select_by: SelectHighest,
-    /// Parallel tasks for remapping alignment
+    /// Parallel tasks for remapping against bin reference
     #[clap(long, short = 'p', default_value = "4")]
     pub parallel: usize,
     /// Working directory
@@ -80,16 +80,16 @@ pub struct RunArgs {
     /// Threads for scanning alignment
     #[clap(long, default_value = "8")]
     pub scan_threads: usize,
-    /// Threads for remapping alignment
+    /// Threads for remapping against bin reference
     #[clap(long, default_value = "2")]
     pub remap_threads: usize,
-    /// Remap all input reads instead of the binned reads
+    /// Remap all input reads instead of binned reads
     #[clap(long)]
     pub remap_all: bool,
-    /// Include secondary alignments
+    /// Include secondary alignments in scanning alignment
     #[clap(long)]
     pub secondary: bool,
-    /// Minimum remap coverage required for consensus assembly
+    /// Minimum bin reference coverage required for consensus assembly 
     #[clap(long, default_value="0.2")]
     pub min_remap_coverage: f64,
     /// Minimum consensus assembly read depth to call a site
