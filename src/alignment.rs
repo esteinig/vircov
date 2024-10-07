@@ -174,9 +174,9 @@ impl std::fmt::Display for Coverage {
 
 /// A struct for computed output fields
 #[derive(Debug, Clone, PartialEq)]
-pub struct GroupedCoverage {
-    /// Group of the target sequence
-    pub group: String,
+pub struct CoverageBin {
+    /// Bin name of the target sequence
+    pub id: String,
     /// Count of the 
     pub count: usize,
     /// Number of non-overlapping alignment regions
@@ -197,9 +197,9 @@ pub struct GroupedCoverage {
     pub read_id: HashSet<String>,
 }
 
-impl std::fmt::Display for GroupedCoverage {
+impl std::fmt::Display for CoverageBin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{} (n = {})", self.group, self.count)?;
+        writeln!(f, "{} (n = {})", self.id, self.count)?;
         for cov in &self.coverage {
             writeln!(f, "{}", cov)?;
         }
@@ -207,11 +207,11 @@ impl std::fmt::Display for GroupedCoverage {
     }
 }
 
-impl GroupedCoverage {
+impl CoverageBin {
     pub fn from_coverage(group: &str, coverage: Vec<&Coverage>) -> Result<Self, VircovError> {
 
         let mut grouped_coverage = Self {
-            group: group.to_string(),
+            id: group.to_string(),
             count: coverage.len(),
             total_regions: 0,
             total_reads: 0,
@@ -283,6 +283,9 @@ impl GroupedCoverage {
 
         Ok(())
 
+    }
+    pub fn sanitized_id(&self) -> String {
+        self.id.replace(" ", "_")
     }
 }
 
@@ -1120,11 +1123,11 @@ impl ReadAlignment {
 
         Ok(())
     }
-    pub fn write_grouped_reads(&self, coverage_fields: &[GroupedCoverage], output: PathBuf) -> Result<(), VircovError> {
+    pub fn write_grouped_reads(&self, coverage_fields: &[CoverageBin], output: PathBuf) -> Result<(), VircovError> {
 
         std::fs::create_dir_all(&output)?;
         for field in coverage_fields.iter() {
-            let sanitized_name = field.group.replace(' ', "__");
+            let sanitized_name = field.id.replace(' ', "__");
 
             let file_path = output.join(sanitized_name).with_extension("txt");
             let mut file_handle = File::create(file_path.as_path())?;

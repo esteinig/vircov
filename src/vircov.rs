@@ -1,4 +1,4 @@
-use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, GroupedCoverage, Preset, ReadAlignment, SelectHighest, VircovAligner};
+use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, CoverageBin, Preset, ReadAlignment, SelectHighest, VircovAligner};
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
@@ -62,7 +62,7 @@ impl Vircov {
             "Reference sequence bin determination using '{}' header field", 
             self.config.reference.annotation.bin
         );
-        let grouped = self.group(&coverage)?;
+        let grouped = self.bin(&coverage)?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
@@ -73,7 +73,7 @@ impl Vircov {
 
         let bin_read_files = if self.config.alignment.remap_bin_reads {
             log::info!("Extracting binned reads to working directory for remapping");
-            Some(self.extract_group_reads(
+            Some(self.extract_bin_reads(
                 &grouped,
                 &self.config.outdir.clone(),
                 self.config.alignment.threads, // scanning threads for group read extraction
@@ -84,7 +84,7 @@ impl Vircov {
         };
         
 
-        log::info!("Starting remapping and consensus assembly for each genome ({})", self.config.alignment.aligner);
+        log::info!("Starting bin remapping and consensus assembly ({})", self.config.alignment.aligner);
         let (consensus, remap) = self.remap(
             &selections, 
             bin_read_files,
@@ -168,15 +168,15 @@ impl Vircov {
 
         Ok(read_alignment)
     }
-    pub fn group(
+    pub fn bin(
         &self,
         coverage: &[Coverage]
-    ) -> Result<Vec<GroupedCoverage>, VircovError> {
-        let mut coverage_groups: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
+    ) -> Result<Vec<CoverageBin>, VircovError> {
+        let mut coverage_bins: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
 
         for cov in coverage {
             if let Some(group) = &cov.group {
-                match coverage_groups.entry(group.to_string()) {
+                match coverage_bins.entry(group.to_string()) {
                     Entry::Occupied(mut entry) => {
                         entry.get_mut().push(cov);
                     }
@@ -189,33 +189,32 @@ impl Vircov {
             }
         }
 
-        let mut grouped_coverage_all: Vec<GroupedCoverage> = Vec::new();
-        for (group, coverage) in coverage_groups {
+        let mut binned_coverage_all: Vec<CoverageBin> = Vec::new();
+        for (bin, coverage) in coverage_bins {
             
-            let group = group.trim().replace(
+            let bin = bin.trim().replace(
                 &self.config.reference.annotation.bin_field(),""
             ); // TODO
 
-            let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
+            let binned_coverage_data = CoverageBin::from_coverage(&bin, coverage)?;
 
-            if grouped_coverage_data.total_regions >= self.config.filter.min_grouped_regions
-                && grouped_coverage_data.mean_coverage >= self.config.filter.min_grouped_mean_coverage
-                && grouped_coverage_data.total_alignments >= self.config.filter.min_grouped_alignments
-                && grouped_coverage_data.total_reads >= self.config.filter.min_grouped_reads
+            if binned_coverage_data.total_regions >= self.config.filter.min_grouped_regions
+                && binned_coverage_data.mean_coverage >= self.config.filter.min_grouped_mean_coverage
+                && binned_coverage_data.total_alignments >= self.config.filter.min_grouped_alignments
+                && binned_coverage_data.total_reads >= self.config.filter.min_grouped_reads
             {
-                grouped_coverage_all.push(grouped_coverage_data);
+                binned_coverage_all.push(binned_coverage_data);
             }
         }
 
-        Ok(grouped_coverage_all)
+        Ok(binned_coverage_all)
     }
-    pub fn extract_group_reads(
+    pub fn extract_bin_reads(
         &self,
-        grouped_coverage: &Vec<GroupedCoverage>,
+        coverage_bins: &Vec<CoverageBin>,
         outdir: &PathBuf,
         threads: usize
     ) -> Result<HashMap<String, Vec<PathBuf>>, VircovError> {  // group, read fastq
-
 
         let result = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
@@ -223,33 +222,33 @@ impl Vircov {
             .expect("Failed to create thread pool")
             .install(|| -> HashMap<String, Vec<PathBuf>> {
 
-            let group_reads = grouped_coverage.par_iter().map(|group_coverage| -> (String, Vec<PathBuf>) {
+            let bin_reads = coverage_bins.par_iter().map(|coverage_bin| -> (String, Vec<PathBuf>) {
                 
-                log::info!("Extracting reads for remapping of bin: {}", group_coverage.group);
+                log::info!("Extracting reads for remapping of bin: {}", coverage_bin.sanitized_id());
 
                 let output = self.config.alignment.get_output_read_paths(
-                    &group_coverage.group, 
+                    &coverage_bin.sanitized_id(), 
                     "fastq", 
                     outdir
-                ).expect(&format!("Failed to get read paths for reference bin remapping: {}", group_coverage.group));
+                ).expect(&format!("Failed to get read paths for reference bin remapping: {}", coverage_bin.sanitized_id()));
 
-                group_coverage.write_group_reads(
+                coverage_bin.write_group_reads(
                     self.config.alignment.input.clone(), 
                     output.clone()
-                ).expect(&format!("Failed to write reads for reference bin remapping: {}", group_coverage.group));
+                ).expect(&format!("Failed to write reads for reference bin remapping: {}", coverage_bin.sanitized_id()));
 
                 // Same keys as the group selection coverage structs for remapping
-                (group_coverage.group.clone(), output)
+                (coverage_bin.sanitized_id().clone(), output)
             }).collect::<Vec<_>>();
 
-            HashMap::from_iter(group_reads)
+            HashMap::from_iter(bin_reads)
         });
 
         Ok(result)
     }
     pub fn select(
         &self,
-        grouped_coverage: &Vec<GroupedCoverage>, // If grouped, these are grouped fields
+        coverage_bins: &Vec<CoverageBin>, // If grouped, these are grouped fields
         select_by: SelectHighest,
         outdir: Option<PathBuf>,
     ) -> Result<HashMap<String, Vec<Coverage>> , VircovError> {
@@ -264,10 +263,10 @@ impl Vircov {
 
         let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
 
-        for group_coverage in grouped_coverage {
+        for coverage_bin in coverage_bins {
             let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
 
-            for cov in &group_coverage.coverage {
+            for cov in &coverage_bin.coverage {
 
                 if let Some(segment) = &cov.segment {
 
@@ -313,7 +312,7 @@ impl Vircov {
 
                     let file_handle = std::fs::File::create(
                         path.join(
-                            format!("{}.fasta", group_coverage.group)
+                            format!("{}.fasta", coverage_bin.sanitized_id())
                         )
                     )?;
                     let mut writer = noodles::fasta::Writer::new(file_handle);
@@ -322,13 +321,13 @@ impl Vircov {
                         let seq = &refs[&segment_cov.reference];
                         writer.write_record(seq)?;
                         
-                        selected_reference_coverage.entry(group_coverage.group.clone())
+                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
                             .and_modify(|x| x.push(segment_cov.clone()))
                             .or_insert(vec![segment_cov]);
                     }
                 } else {
                     for (_, segment_cov) in selected_segments {
-                        selected_reference_coverage.entry(group_coverage.group.clone())
+                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
                             .and_modify(|x| x.push(segment_cov.clone()))
                             .or_insert(vec![segment_cov]);
                     }
@@ -341,9 +340,9 @@ impl Vircov {
                 // to write to FASTA
 
                 let max = match select_by {
-                    SelectHighest::Reads => group_coverage.coverage.iter().max_by_key(|x| x.reads),
-                    SelectHighest::Coverage => group_coverage.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                    SelectHighest::Alignments => group_coverage.coverage.iter().max_by_key(|x| x.alignments)
+                    SelectHighest::Reads => coverage_bin.coverage.iter().max_by_key(|x| x.reads),
+                    SelectHighest::Coverage => coverage_bin.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                    SelectHighest::Alignments => coverage_bin.coverage.iter().max_by_key(|x| x.alignments)
                 };
 
                 match max {
@@ -354,14 +353,14 @@ impl Vircov {
                             
                             let file_handle = std::fs::File::create(
                                 path.join(
-                                    format!("{}.fasta", group_coverage.group)
+                                    format!("{}.fasta", coverage_bin.sanitized_id())
                                 )
                             )?;
                             let mut writer = noodles::fasta::Writer::new(file_handle);
                             writer.write_record(seq)?;
                         }
 
-                        selected_reference_coverage.entry(group_coverage.group.clone())
+                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
                             .and_modify(|x| x.push(field.clone()))
                             .or_insert(vec![field.clone()]);
                     }
@@ -401,7 +400,7 @@ impl Vircov {
                     let remap_id = bin;
 
                     let bin_read_files = match &bin_read_files {
-                        Some(group_read_map) => group_read_map.get(remap_id),
+                        Some(bin_read_map) => bin_read_map.get(remap_id),
                         None => None
                     };
 
@@ -464,7 +463,7 @@ impl Vircov {
                                     )
                                 };
     
-                                log::info!("Creating consensus assembly from bin reference alignment '{bin}': {output_name}");
+                                log::info!("Creating consensus assembly from bin alignment '{bin}': {output_name}");
                                 let consensus = VircovConsensus::new(
                                     ConsensusConfig::with_default(
                                         &bam.clone(), 

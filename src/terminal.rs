@@ -60,7 +60,7 @@ pub struct RunArgs {
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
     /// Annotation preset for reference headers
-    #[arg(long, short='P', default_value="default")]
+    #[arg(long, short='a', default_value="default")]
     pub annotation: AnnotationPreset,
     /// Select a representative genome from the groups by reads or coverage
     #[clap(long, short='b', default_value="coverage")]
@@ -83,6 +83,9 @@ pub struct RunArgs {
     /// Threads for remapping alignment
     #[clap(long, default_value = "2")]
     pub remap_threads: usize,
+    /// Remap all input reads instead of the binned reads
+    #[clap(long)]
+    pub remap_all: bool,
     /// Include secondary alignments
     #[clap(long)]
     pub secondary: bool,
@@ -101,9 +104,6 @@ pub struct RunArgs {
     /// Do not create consensus genome from remapping stage
     #[clap(long)]
     pub no_consensus: bool,
-    /// Remap all input reads instead of the grouped reads
-    #[clap(long)]
-    pub remap_all: bool,
 }
 
 #[derive(Debug, Args)]
@@ -135,7 +135,7 @@ pub struct CoverageArgs {
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
     /// Annotation preset for reference headers
-    #[arg(long, short='P', default_value="default")]
+    #[arg(long, short='a', default_value="default")]
     pub annotation: AnnotationPreset,
     /// Working directory
     #[clap(long, short = 'w', default_value = ".")]
@@ -276,7 +276,8 @@ pub struct AnnotateDatabaseArgs {
     /// Vircov database sequence annotation file (.tsv)
     /// 
     /// Required columns: id (string, sequence identifier, required value), bin (string, binning variable, required value), 
-    /// segment (string, segment annotation, optional value), description (string, sequence description, optional value)
+    /// segment (string, segment annotation, optional value), name (string, organism name, optional value), 
+    /// description (string, sequence description, optional value)
     #[clap(long, short = 'a')]
     pub annotations: PathBuf,
     /// Annotated database sequence file (.fasta)
