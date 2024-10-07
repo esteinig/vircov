@@ -263,7 +263,10 @@ pub struct ConcatArgs {
     /// Filter by minimum consensus completeness
     #[clap(long, short = 'm', default_value="0")]
     pub min_completeness: f64,
-    /// Add the file stem as identifier to column
+    /// Add the file parent directory name to column 'id'
+    #[clap(long, short = 'f')]
+    pub file_dir: bool,
+    /// Add the file stem to column 'id'
     #[clap(long, short = 'f')]
     pub file_id: bool,
 }

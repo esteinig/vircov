@@ -1337,7 +1337,7 @@ impl VircovSummary {
         Ok(())
 
     }
-    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: f64, file_id: bool) -> Result<(), VircovError> {
+    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: f64, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
 
         let mut records = Vec::new();
         for file in input {
@@ -1348,7 +1348,12 @@ impl VircovSummary {
 
                 if file_id {
                     record.id = Some(filename.clone());
+                } else if file_dir {
+                    let parent_dir = file.parent().unwrap_or(&file).to_path_buf();
+                    let dirname = get_file_component(&parent_dir, FileComponent::FileName)?;
+                    record.id = Some(dirname)
                 }
+
 
                 if let Some(completeness) = record.consensus_completeness {
                     if completeness >= min_completeness {

@@ -165,7 +165,7 @@ fn main() -> Result<()> {
                     subtype::validate_genotypes( &args.genotypes, &args.fasta)?;
                 }
                 ToolsCommands::ConcatOutput(args) => {
-                    VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id)?;
+                    VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id, args.file_dir)?;
                 },
                 ToolsCommands::AnnotateDatabase(args) => {
 
