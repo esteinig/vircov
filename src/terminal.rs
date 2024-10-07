@@ -59,12 +59,9 @@ pub struct RunArgs {
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
-    /// Group alignments by a field in the reference sequence description
-    #[clap(long, short = 'g', long, default_value="taxid=")]
-    pub group_by: Option<String>,
-    /// Group field separator in the reference sequence description
-    #[clap(long, short = 's', long, default_value = ";")]
-    pub field_sep: String,
+    /// Annotation preset for reference headers
+    #[arg(long, short='P', default_value="default")]
+    pub annotation: AnnotationPreset,
     /// Select a representative genome from the groups by reads or coverage
     #[clap(long, short='b', default_value="coverage")]
     pub select_by: SelectHighest,
@@ -80,12 +77,6 @@ pub struct RunArgs {
     /// Print formatted table to console
     #[clap(long, short = 'T')]
     pub table: bool,
-    // Segment field to identify segments in grouped alignments
-    #[clap(long, default_value="segment=")]
-    pub segment_field: Option<String>,
-    /// Segment field identifier negative (e.g. "segment=N/A")
-    #[clap(long, default_value="segment=N/A")]
-    pub segment_field_nan: Option<String>,
     /// Threads for scanning alignment
     #[clap(long, default_value = "8")]
     pub scan_threads: usize,
@@ -143,6 +134,9 @@ pub struct CoverageArgs {
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
+    /// Annotation preset for reference headers
+    #[arg(long, short='P', default_value="default")]
+    pub annotation: AnnotationPreset,
     /// Working directory
     #[clap(long, short = 'w', default_value = ".")]
     pub workdir: Option<PathBuf>,

@@ -1,8 +1,8 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
 use crate::utils::get_niffler_fastx_reader_writer;
-use crate::vircov::{AlignmentConfig, Annotation, FilterConfig, ReferenceConfig, VircovRecord};
-
+use crate::vircov::{AlignmentConfig, FilterConfig, ReferenceConfig, VircovRecord};
+use crate::annotation::Annotation;
 
 use anyhow::Result;
 use crossterm::style::Color;
@@ -12,7 +12,6 @@ use ordered_float::OrderedFloat;
 
 
 use rust_htslib::bam::ext::BamRecordExtensions;
-use rust_htslib::htslib::htsExactFormat_fastq_format;
 use rust_htslib::{bam, bam::record::Cigar, bam::HeaderView, bam::Read};
 use std::process::{ChildStdout, Command, Output, Stdio};
 use std::str::from_utf8;
@@ -1041,7 +1040,7 @@ impl ReadAlignment {
                     length: target_len,
                     coverage: target_cov,
                     description: target_description,
-                    group: annotation.group,
+                    group: annotation.bin,
                     segment: annotation.segment,
                     name: annotation.name,
                     read_id: unique_read_ids,
@@ -1077,7 +1076,7 @@ impl ReadAlignment {
                                 length: record.sequence().len() as u64,
                                 coverage: 0.0,
                                 description: descr,
-                                group: annotation.group,
+                                group: annotation.bin,
                                 segment: annotation.segment,
                                 name: annotation.name,
                                 read_id: Vec::new(),

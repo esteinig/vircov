@@ -1,4 +1,5 @@
 use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, GroupedCoverage, Preset, ReadAlignment, SelectHighest, VircovAligner};
+use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
 use crate::terminal::{CoverageArgs, RunArgs};
@@ -58,20 +59,20 @@ impl Vircov {
         let coverage = read_alignment.coverage(false, false)?;
 
         log::info!(
-            "Reference sequence group determination using '{}' header field", 
-            self.config.reference.annotation.group.clone().unwrap_or("None".to_string())
+            "Reference sequence bin determination using '{}' header field", 
+            self.config.reference.annotation.bin
         );
         let grouped = self.group(&coverage)?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
             &grouped, 
-            SelectHighest::Coverage,
+            select_by,
             None
         )?;
 
-        let group_read_files = if self.config.alignment.remap_group_reads {
-            log::info!("Extracting group reads to working directory for remapping ");
+        let bin_read_files = if self.config.alignment.remap_bin_reads {
+            log::info!("Extracting binned reads to working directory for remapping");
             Some(self.extract_group_reads(
                 &grouped,
                 &self.config.outdir.clone(),
@@ -86,7 +87,7 @@ impl Vircov {
         log::info!("Starting remapping and consensus assembly for each genome ({})", self.config.alignment.aligner);
         let (consensus, remap) = self.remap(
             &selections, 
-            group_read_files,
+            bin_read_files,
             &self.config.outdir.clone(), 
             parallel, 
             threads, 
@@ -192,10 +193,7 @@ impl Vircov {
         for (group, coverage) in coverage_groups {
             
             let group = group.trim().replace(
-                self.config.reference.annotation.group
-                    .as_ref()
-                    .unwrap(),
-                 ""
+                &self.config.reference.annotation.bin_field(),""
             ); // TODO
 
             let grouped_coverage_data = GroupedCoverage::from_coverage(&group, coverage)?;
@@ -227,18 +225,18 @@ impl Vircov {
 
             let group_reads = grouped_coverage.par_iter().map(|group_coverage| -> (String, Vec<PathBuf>) {
                 
-                log::info!("Extracting reads for remapping of group: {}", group_coverage.group);
+                log::info!("Extracting reads for remapping of bin: {}", group_coverage.group);
 
                 let output = self.config.alignment.get_output_read_paths(
                     &group_coverage.group, 
                     "fastq", 
                     outdir
-                ).expect(&format!("Failed to get read paths for reference group remapping: {}", group_coverage.group));
+                ).expect(&format!("Failed to get read paths for reference bin remapping: {}", group_coverage.group));
 
                 group_coverage.write_group_reads(
                     self.config.alignment.input.clone(), 
                     output.clone()
-                ).expect(&format!("Failed to write reads for reference group remapping: {}", group_coverage.group));
+                ).expect(&format!("Failed to write reads for reference bin remapping: {}", group_coverage.group));
 
                 // Same keys as the group selection coverage structs for remapping
                 (group_coverage.group.clone(), output)
@@ -273,7 +271,7 @@ impl Vircov {
 
                 if let Some(segment) = &cov.segment {
 
-                    if segment != self.config.reference.annotation.segment_na.as_ref().ok_or(VircovError::NoSegmentFieldProvided)? {
+                    if segment != &self.config.reference.annotation.segment_nan {
                         match grouped_segments.entry(segment.clone()) {
                             Entry::Occupied(mut entry) => {
                                 entry.get_mut().push(cov.clone());
@@ -378,7 +376,7 @@ impl Vircov {
     pub fn remap(
         &self, 
         selections: &HashMap<String, Vec<Coverage>>, 
-        group_read_files: Option<HashMap<String, Vec<PathBuf>>>,
+        bin_read_files: Option<HashMap<String, Vec<PathBuf>>>,
         outdir: &PathBuf,
         parallel: usize, 
         threads: usize,
@@ -398,16 +396,16 @@ impl Vircov {
 
             let results: Vec<Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError>> = selections
                 .into_par_iter()
-                .map(|(group, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError> {
+                .map(|(bin, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError> {
                     
-                    let remap_id = group;
+                    let remap_id = bin;
 
-                    let group_read_files = match &group_read_files {
+                    let bin_read_files = match &bin_read_files {
                         Some(group_read_map) => group_read_map.get(remap_id),
                         None => None
                     };
 
-                    log::info!("Reference group '{}' launched remapping stage (n = {})", group, coverage.len());
+                    log::info!("Reference bin '{}' remapping (n = {})", bin, coverage.len());
 
                     let remap_reference = outdir.join(remap_id).with_extension("fasta");
                     
@@ -423,7 +421,7 @@ impl Vircov {
                         &self.config.alignment.remap_config(
                             &remap_reference, 
                             None, 
-                            group_read_files.cloned(),
+                            bin_read_files.cloned(),
                             Some(bam.clone()), 
                             threads
                         ),
@@ -439,8 +437,8 @@ impl Vircov {
                         .coverage(true, false)?;
 
                     // Remove the group reads after alignment - take up a lot of disk space
-                    if let Some(group_reads) = group_read_files {
-                        for file in group_reads {
+                    if let Some(bin_reads) = bin_read_files {
+                        for file in bin_reads {
                             remove_file(file)?;
                         }
                     }
@@ -457,16 +455,16 @@ impl Vircov {
                                         let seg = self.config.reference.annotation.segment_name_file(segment);
                                         (
                                             Some(ref_cov.reference.clone()), 
-                                            format!("{group}.{seg}.consensus.fa")
+                                            format!("{bin}.{seg}.consensus.fa")
                                         )
                                     }, 
                                     None => (
                                         None, 
-                                        format!("{group}.nan.consensus.fa")
+                                        format!("{bin}.nan.consensus.fa")
                                     )
                                 };
     
-                                log::info!("Creating consensus assembly with iVar: {output_name}");
+                                log::info!("Creating consensus assembly from bin reference alignment '{bin}': {output_name}");
                                 let consensus = VircovConsensus::new(
                                     ConsensusConfig::with_default(
                                         &bam.clone(), 
@@ -609,7 +607,8 @@ impl VircovConfig {
                 !args.remap_all
             ),
             reference: ReferenceConfig::with_default(
-                Some(args.reference.clone())
+                Some(args.reference.clone()),
+                args.annotation.clone()
             ),
             consensus: ConsensusConfig::with_default_from_args(
                 args.min_consensus_depth,
@@ -646,7 +645,8 @@ impl VircovConfig {
                 false
             ),
             reference: ReferenceConfig::with_default(
-                args.reference.clone()
+                args.reference.clone(),
+                args.annotation.clone()
             ),
             filter: FilterConfig::default(),
             consensus: ConsensusConfig::default(), // not used
@@ -681,7 +681,7 @@ pub struct AlignmentConfig {
     pub secondary: bool,
     pub output: Option<PathBuf>,
     pub threads: usize,
-    pub remap_group_reads: bool
+    pub remap_bin_reads: bool
 }
 impl AlignmentConfig {
     pub fn remap_config(
@@ -735,7 +735,7 @@ impl AlignmentConfig {
             create_index,
             secondary,
             threads,
-            remap_group_reads,
+            remap_bin_reads: remap_group_reads,
             ..Default::default()
         }
     }
@@ -768,7 +768,7 @@ impl Default for AlignmentConfig {
             index: PathBuf::from("reference.fasta"),
             output: Some(PathBuf::from("test.sam")),
             threads: 8,
-            remap_group_reads: true
+            remap_bin_reads: true
         }
     }
 }
@@ -787,9 +787,10 @@ impl ReferenceConfig {
         config.fasta = Some(fasta.to_owned());
         config
     }
-    pub fn with_default(fasta: Option<PathBuf>) -> Self {
+    pub fn with_default(fasta: Option<PathBuf>, preset: AnnotationPreset) -> Self {
         Self {
             fasta: fasta.clone(),
+            annotation: AnnotationConfig::from_preset(preset),
             ..Default::default()
         }
     }
@@ -799,7 +800,7 @@ impl Default for ReferenceConfig {
         Self {
             fasta: None,
             exclude: None,
-            annotation: AnnotationConfig::virosaurus()
+            annotation: AnnotationConfig::default()
         }
     }
 }
@@ -923,116 +924,6 @@ impl Default for ConsensusConfig {
     }
 }
 
-
-pub struct Annotation {
-    pub group: Option<String>,
-    pub name: Option<String>,
-    pub segment: Option<String>
-}
-impl Annotation {
-    pub fn from(description: &str, options: &AnnotationConfig) -> Self {
-
-        let sep: String = options.sep.to_string();
-
-        let fields: Vec<&str> = description.split(&sep).map(|field| field.trim()).collect();
-
-        let taxid = match &options.group {
-            Some(field_taxid) => {
-                let taxid_fields: Vec<&str> = fields.iter().filter(|field| field.starts_with(field_taxid)).map(|x| *x).collect();
-                match taxid_fields.first() {
-                    Some(f) => Some(f.trim().trim_start_matches(field_taxid).to_string()),
-                    _ => None
-                }
-            },
-            None => None
-        };
-
-        let taxon = match &options.name {
-            Some(field_taxon) => {
-                let taxon_fields: Vec<&str> = fields.iter().filter(|field| field.starts_with(field_taxon)).map(|x| *x).collect();
-                match taxon_fields.first() {
-                    Some(f) => Some(f.trim().trim_start_matches(field_taxon).to_string()),
-                    _ => None
-                }
-            },
-            None => None
-        };
-
-        let segment = match &options.segment {
-            Some(field_segment) => {
-                let segment_fields: Vec<&str> = fields.iter().filter(|field| field.starts_with(field_segment)).map(|x| *x).collect();
-                match segment_fields.first() {
-                    Some(segment) => Some(segment.trim_start_matches(field_segment).to_string()),
-                    None => None
-                }
-            },
-            None => None
-        };
-
-        Self {
-            group: taxid, name: taxon, segment
-        }       
-
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AnnotationConfig {
-    pub sep: String, 
-    pub group: Option<String>, 
-    pub name: Option<String>, 
-    pub segment: Option<String>, 
-    pub segment_na: Option<String>
-}
-impl AnnotationConfig {
-    pub fn segment_name_file(&self, segment: &str) -> String {
-        match &self.segment_na {
-            Some(segment_nan) => {
-                if segment == segment_nan {
-                    "nan".to_string()
-                } else {
-                    segment.to_string()
-                }
-            },
-            None => "nan".to_string()
-        }
-    }
-    pub fn virosaurus() -> Self {
-        Self {
-            sep: String::from(";"),
-            group: Some(String::from("taxid=")),
-            name: Some(String::from("usual name=")),
-            segment: Some(String::from("segment=")),
-            segment_na: Some(String::from("N/A"))
-        }
-    }
-    pub fn with_default(
-        &self, 
-        sep: String, 
-        group: Option<String>, 
-        segment: Option<String>, 
-        segment_na: Option<String>
-    ) -> Self {
-        Self {
-            sep,
-            group,
-            segment,
-            segment_na,
-            ..Default::default()
-        }
-    }
-}
-impl Default for AnnotationConfig {
-    fn default() -> Self {
-        Self {
-            sep: ";".to_string(),
-            group: None,
-            name: None,
-            segment: None,
-            segment_na: None
-        }
-    }
-}
 
 pub fn display_option_string(opt: &Option<String>) -> String 
 {
@@ -1193,7 +1084,7 @@ impl VircovRecord {
             consensus_length,
             consensus_missing,
             consensus_completeness,
-            taxid: annotation.group,
+            taxid: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
             reference_description: scan_record.description,
