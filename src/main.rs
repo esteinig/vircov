@@ -21,6 +21,7 @@ mod utils;
 mod vircov;
 mod consensus;
 mod annotation;
+mod haplotype;
 
 /// Vircov application
 ///

@@ -72,6 +72,11 @@ pub enum VircovError {
     #[error("Consensus assembler `{0}` cannot be executed - is it installed?")]
     ConsensusDependencyMissing(ConsensusAssembler),
 
+    /// Represents an error when the specified consensus assembler cannot be executed, possibly due to it not being installed.
+    #[error("Haplotype assembler `{0}` cannot be executed - is it installed?")]
+    HaplotypeDependencyMissing(String),
+
+
     /// Represents an error when a sequence record identifier could not be parsed
     #[error("Consensus record identifier could not be parsed")]
     NeedltailRecordIdentifierNotParsed,
@@ -149,11 +154,9 @@ pub enum VircovError {
     #[error("multiple coverage references found for reference: {0}")]
     CoverageMatchNotIdentifiable(String),
 
-
     /// Indicates failure to get output read paths based on input reads
     #[error("invalid number of input read files: {0}")]
     NumberInputReadFilesInvalid(usize),
-
 
     /// Indicates failure attempting to read an empty sequence file
     #[error("empty sequence file: {0}")]

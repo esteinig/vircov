@@ -2,6 +2,7 @@ use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
+use crate::haplotype::HaplotypeVariantCaller;
 use crate::terminal::{CoverageArgs, RunArgs};
 use crate::utils::{get_file_component, FileComponent};
 
@@ -59,7 +60,7 @@ impl Vircov {
         let coverage = read_alignment.coverage(false, false)?;
 
         log::info!(
-            "Reference sequence bin determination using '{}' header field", 
+            "Reference alignment binning using '{}' field", 
             self.config.reference.annotation.bin
         );
         let grouped = self.bin(&coverage)?;
@@ -864,9 +865,10 @@ impl FilterConfig {
         }
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HaplotypeConfig {
     pub enabled: bool,
+    pub variant_caller: HaplotypeVariantCaller,
     pub alignment: PathBuf,
     pub fasta: PathBuf,
     pub output: PathBuf,
@@ -885,7 +887,8 @@ impl HaplotypeConfig {
             alignment,
             fasta,
             output,
-            min_var_frequency
+            min_var_frequency,
+            ..Default::default()
         }
     }
 }
@@ -893,6 +896,7 @@ impl Default for HaplotypeConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            variant_caller: HaplotypeVariantCaller::Freebayes,
             alignment: PathBuf::from(""),
             fasta: PathBuf::from(""),
             output: PathBuf::from(""),
