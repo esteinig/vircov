@@ -537,7 +537,7 @@ impl VircovAligner {
         };
         
         let secondary_arg = if self.config.secondary {
-            "--secondary=yes" // TODO: documentation default behaviour of Bowtie2
+            "--secondary=yes" // TODO: documentation default behaviour of Minimap2
         } else {
             "--secondary=no"
         };
@@ -596,9 +596,9 @@ impl VircovAligner {
         };
 
         let secondary_arg = if self.config.secondary {
-            "" // TODO: documentation default behaviour of Bowtie2
+            "-k 50" // search for one or more alignments report each up to this value
         } else {
-            "-k 1"
+            ""      // search for multiple alignments, report best one [default behaviour]
         };
 
         let cmd = if self.config.paired_end {
@@ -645,9 +645,9 @@ impl VircovAligner {
         };
 
         let secondary_arg = if self.config.secondary {
-            "-N 50"  
+            "-N 50"  // output up to this value secondary alignments
         } else {
-            "-N 0" // TODO: documentation default behaviour of Strobealign
+            ""       // no secondary alignments are output by default 
         };
 
         let cmd = if self.config.paired_end {

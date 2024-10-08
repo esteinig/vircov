@@ -261,10 +261,10 @@ pub struct ConcatArgs {
     #[clap(long, short = 'o')]
     pub output: PathBuf,
     /// Filter by minimum consensus completeness
-    #[clap(long, short = 'm', default_value="0")]
-    pub min_completeness: f64,
+    #[clap(long, short = 'm')]
+    pub min_completeness: Option<f64>,
     /// Add the file parent directory name to column 'id'
-    #[clap(long, short = 'f')]
+    #[clap(long, short = 'd')]
     pub file_dir: bool,
     /// Add the file stem to column 'id'
     #[clap(long, short = 'f')]

@@ -10,6 +10,8 @@ pub enum HaplotypeVariantCaller {
 }
 
 pub struct HaplotypeRecord {
+    id: String,
+    snp: usize,
 
 }
 
@@ -26,7 +28,7 @@ impl VircovHaplotype {
     }
     pub fn haplotype(&self) -> Result<Vec<HaplotypeRecord>, VircovError> {
         let records = match self.config.variant_caller {
-            HaplotypeVariantCaller::Freebayes => self.run_freebayes()?,
+            HaplotypeVariantCaller::Freebayes => self.run_haplotyping()?,
         };
         Ok(records)
     }
@@ -48,7 +50,9 @@ impl VircovHaplotype {
 
         Ok(output)
     }
-    fn run_freebayes(&self) -> Result<Vec<HaplotypeRecord>, VircovError> {
+    fn run_haplotyping(&self) -> Result<Vec<HaplotypeRecord>, VircovError> {
+
+        
 
         Ok(Vec::new())
     }

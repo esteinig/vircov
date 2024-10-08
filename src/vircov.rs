@@ -872,6 +872,7 @@ pub struct HaplotypeConfig {
     pub alignment: PathBuf,
     pub fasta: PathBuf,
     pub output: PathBuf,
+    pub threads: usize,
     pub min_var_frequency: f64,
 }
 impl HaplotypeConfig {
@@ -900,6 +901,7 @@ impl Default for HaplotypeConfig {
             alignment: PathBuf::from(""),
             fasta: PathBuf::from(""),
             output: PathBuf::from(""),
+            threads: 8,
             min_var_frequency: 0.05
         }
     }
@@ -1341,7 +1343,7 @@ impl VircovSummary {
         Ok(())
 
     }
-    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: f64, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
+    pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: Option<f64>, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
 
         let mut records = Vec::new();
         for file in input {
@@ -1358,11 +1360,14 @@ impl VircovSummary {
                     record.id = Some(dirname)
                 }
 
-
-                if let Some(completeness) = record.consensus_completeness {
-                    if completeness >= min_completeness {
-                        records.push(record)
+                if let Some(min_completeness) = record.consensus_completeness {
+                    if let Some(completeness) = record.consensus_completeness {
+                        if completeness >= min_completeness {
+                            records.push(record)
+                        }
                     }
+                } else {
+                    records.push(record)
                 }
                 
             }
