@@ -331,23 +331,23 @@ impl SubtypeDatabase {
     }
     pub fn compute_mknn_graph(&self, fasta: &PathBuf, combined_fasta: &PathBuf) -> Result<(), SubtypeDatabaseError> {
 
-        // Concatentate the input genome with the reference nucleotide data 
-        log::info!("Concatenating query sequences to database sequences....");
-        concatenate_fasta_files(&self.files.fasta_nuc, &[fasta], &combined_fasta)?;
+        // // Concatentate the input genome with the reference nucleotide data 
+        // log::info!("Concatenating query sequences to database sequences....");
+        // concatenate_fasta_files(&self.files.fasta_nuc, &[fasta], &combined_fasta)?;
 
-        let netview = Netview::new();
+        // let netview = Netview::new();
 
-        let (distance, af, ids) = netview.skani_distance(
-            fasta, 
-            self.skani.marker_compression_factor, 
-            self.skani.compression_factor, 
-            self.skani.threads, 
-            self.skani.min_percent_identity, 
-            self.skani.min_alignment_fraction, 
-            self.skani.small_genomes
-        )?;
+        // let (distance, af, ids) = netview.skani_distance(
+        //     fasta, 
+        //     self.skani.marker_compression_factor, 
+        //     self.skani.compression_factor, 
+        //     self.skani.threads, 
+        //     self.skani.min_percent_identity, 
+        //     self.skani.min_alignment_fraction, 
+        //     self.skani.small_genomes
+        // )?;
 
-        let graph = netview.graph_from_vecs(distance, 30, Some(af), Some(ids))?;
+        // let graph = netview.graph_from_vecs(distance, 30, Some(af), Some(ids))?;
 
         
 
