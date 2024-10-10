@@ -228,7 +228,7 @@ impl CoverageBin {
 
         grouped_coverage.max_coverage = match coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)) {
             Some(fie) => fie.coverage,
-            None => return Err(VircovError::GroupSelectCoverage),
+            None => return Err(VircovError::BinSelectCoverage),
         };
 
         for field in coverage {
@@ -527,6 +527,7 @@ impl VircovAligner {
         Ok(output)
     }
     fn run_minimap2(&self) -> Result<Option<ReadAlignment>, VircovError> {
+        
         let aligner_args = self.config.args.as_deref().unwrap_or("");
         let aligner_preset = self.config.preset.clone().ok_or(VircovError::MissingMinimap2Preset)?;
 
@@ -537,7 +538,7 @@ impl VircovAligner {
         };
         
         let secondary_arg = if self.config.secondary {
-            "--secondary=yes" // TODO: documentation default behaviour of Minimap2
+            "--secondary=yes"
         } else {
             "--secondary=no"
         };
@@ -1177,36 +1178,35 @@ impl ReadAlignment {
 
         eprintln!("{}", table);
     }
-    /// Print the coverage distributions to console as a text-based coverage plot
-    pub fn coverage_plots(
-        &self,
-        coverage: &[Coverage],
-        max_width: u64,
-    ) -> Result<(), VircovError> {
-        println!();
-        for (target_name, targets) in &self.target_intervals {
-            let target_record = match &self.target_sequences {
-                None => None,
-                Some(seqs) => seqs.get(target_name),
-            };
-            let target_len = match target_record {
-                None => return Err(VircovError::CovPlotSeqLengthError()),
-                Some(fasta_record) => fasta_record.sequence().len() as u64,
-            };
+    // /// Print the coverage distributions to console as a text-based coverage plot
+    // pub fn coverage_plots(
+    //     &self,
+    //     coverage: &[Coverage],
+    //     max_width: u64,
+    // ) -> Result<(), VircovError> {
+    //     println!();
+    //     for (target_name, targets) in &self.target_intervals {
+    //         let target_record = match &self.target_sequences {
+    //             None => None,
+    //             Some(seqs) => seqs.get(target_name),
+    //         };
+    //         let target_len = match target_record {
+    //             None => return Err(VircovError::CovPlotSeqLengthError()),
+    //             Some(fasta_record) => fasta_record.sequence().len() as u64,
+    //         };
 
-            if coverage
-                .iter()
-                .map(|x| &x.reference)
-                .any(|x| x == target_name)
-            {
-                let covplot = CovPlot::new(targets, target_len, max_width)?;
-                covplot.to_console(target_name, target_len, Color::Red)?;
-            }
-        }
+    //         if coverage
+    //             .iter()
+    //             .map(|x| &x.reference)
+    //             .any(|x| x == target_name)
+    //         {
+    //             let covplot = CovPlot::new(targets, target_len, max_width)?;
+    //             covplot.to_console(target_name, target_len, Color::Red)?;
+    //         }
+    //     }
 
-        Ok(())
-    }
-    
+    //     Ok(())
+    // }
 }
 
 /*

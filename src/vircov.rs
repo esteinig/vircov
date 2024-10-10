@@ -47,7 +47,8 @@ impl Vircov {
         table: bool,
         select_by: SelectHighest,
         alignment: Option<PathBuf>,
-        alignment_format: Option<AlignmentFormat>
+        alignment_format: Option<AlignmentFormat>,
+        remap_args: Option<String>
     ) -> Result<(), VircovError> {
 
         log::info!("Alignment scan against reference database ({})", self.config.alignment.aligner);
@@ -63,7 +64,7 @@ impl Vircov {
             "Reference alignment binning using '{}' field", 
             self.config.reference.annotation.bin
         );
-        let grouped = self.bin(&coverage)?;
+        let grouped = self.bin_alignments(&coverage)?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
@@ -89,6 +90,7 @@ impl Vircov {
         let (consensus, remap) = self.remap(
             &selections, 
             bin_read_files,
+            remap_args,
             &self.config.outdir.clone(), 
             parallel, 
             threads, 
@@ -169,7 +171,7 @@ impl Vircov {
 
         Ok(read_alignment)
     }
-    pub fn bin(
+    pub fn bin_alignments(
         &self,
         coverage: &[Coverage]
     ) -> Result<Vec<CoverageBin>, VircovError> {
@@ -186,7 +188,7 @@ impl Vircov {
                     }
                 }
             } else {
-                return Err(VircovError::GroupAnnotationMissing(cov.reference.to_owned()))
+                return Err(VircovError::BinAnnotationMissing(cov.reference.to_owned()))
             }
         }
 
@@ -256,7 +258,7 @@ impl Vircov {
         
         let refs = self.references
             .as_ref()
-            .ok_or(VircovError::GroupSequenceError)?;
+            .ok_or(VircovError::BinSequenceError)?;
 
         if let Some(ref path) = outdir {
             std::fs::create_dir_all(path)?;
@@ -305,7 +307,7 @@ impl Vircov {
                                 .entry(segment)
                                 .or_insert_with(|| selected.clone());
                         }
-                        None => return Err(VircovError::GroupSelectReference),
+                        None => return Err(VircovError::BinSelectReference),
                     }
                 }
 
@@ -365,7 +367,7 @@ impl Vircov {
                             .and_modify(|x| x.push(field.clone()))
                             .or_insert(vec![field.clone()]);
                     }
-                    _ => return Err(VircovError::GroupSelectReference),
+                    _ => return Err(VircovError::BinSelectReference),
                 }
             }
 
@@ -377,6 +379,7 @@ impl Vircov {
         &self, 
         selections: &HashMap<String, Vec<Coverage>>, 
         bin_read_files: Option<HashMap<String, Vec<PathBuf>>>,
+        remap_args: Option<String>,
         outdir: &PathBuf,
         parallel: usize, 
         threads: usize,
@@ -386,7 +389,7 @@ impl Vircov {
 
         let refs = self.references
             .as_ref()
-            .ok_or(VircovError::GroupSequenceError)?;
+            .ok_or(VircovError::BinSequenceError)?;
 
         rayon::ThreadPoolBuilder::new()
             .num_threads(parallel)
@@ -420,7 +423,7 @@ impl Vircov {
                     let remap_aligner = VircovAligner::from(
                         &self.config.alignment.remap_config(
                             &remap_reference, 
-                            None, 
+                            remap_args.clone(), 
                             bin_read_files.cloned(),
                             Some(bam.clone()), 
                             threads
@@ -605,6 +608,7 @@ impl VircovConfig {
                 args.secondary,
                 Some(outdir.join("scan.bam")),
                 args.scan_threads,
+                args.scan_args.clone(),
                 !args.remap_all
             ),
             reference: ReferenceConfig::with_default(
@@ -643,6 +647,7 @@ impl VircovConfig {
                 args.secondary,
                 Some(outdir.join("scan.bam")),
                 args.threads,
+                args.args.clone(),
                 false
             ),
             reference: ReferenceConfig::with_default(
@@ -682,7 +687,7 @@ pub struct AlignmentConfig {
     pub secondary: bool,
     pub output: Option<PathBuf>,
     pub threads: usize,
-    pub remap_bin_reads: bool
+    pub remap_bin_reads: bool,
 }
 impl AlignmentConfig {
     pub fn remap_config(
@@ -725,6 +730,7 @@ impl AlignmentConfig {
         secondary: bool, 
         output: Option<PathBuf>, 
         threads: usize,
+        args: Option<String>,
         remap_group_reads: bool
     ) -> Self {
         Self {
@@ -736,6 +742,7 @@ impl AlignmentConfig {
             create_index,
             secondary,
             threads,
+            args,
             remap_bin_reads: remap_group_reads,
             ..Default::default()
         }

@@ -8,7 +8,6 @@ use crate::{alignment::Aligner, consensus::ConsensusAssembler};
 pub enum VircovError {
     #[error("Subtype database error")]
     SubtypeDatabase(#[from] crate::subtype::SubtypeDatabaseError),
-
     /// Represents all other cases of `csv::Error`.
     #[error(transparent)]
     CsvError(#[from] csv::Error),
@@ -21,23 +20,19 @@ pub enum VircovError {
     /// Represents all other cases of `needletail::errors::ParseError`.
     #[error(transparent)]
     NeedletailParseError(#[from] needletail::errors::ParseError),
-    
     #[error("Failed to convert OsString to String")]
     FileNameConversionError,
     #[error("Failed to extract the taxonomic identifier annotation")]
     ExtractTaxidAnnotation,
-
-    /// Represents an error when no aligner is configured.
-    #[error("Grouping activated but no group annotation found in reference sequence: {0}")]
-    GroupAnnotationMissing(String),
-    
+    /// Represents an error when no bin field could be found in reference header
+    #[error("no binning field found in reference sequence header: {0}")]
+    BinAnnotationMissing(String),
     /// Represents an error when a command execution fails.
     #[error("Failed to execute command '{0}': {1}")]
     CommandExecutionFailed(String, String),
     /// Represents an error when a command exits with a non-zero status code.
     #[error("Command '{0}' exited with status code: {1}")]
     CommandFailed(String, i32),
-
     /// Represents an error when no aligner is configured.
     #[error("No aligner configured.")]
     MissingAligner,
@@ -71,21 +66,12 @@ pub enum VircovError {
     /// Represents an error when the specified consensus assembler cannot be executed, possibly due to it not being installed.
     #[error("Consensus assembler `{0}` cannot be executed - is it installed?")]
     ConsensusDependencyMissing(ConsensusAssembler),
-
     /// Represents an error when the specified consensus assembler cannot be executed, possibly due to it not being installed.
     #[error("Haplotype assembler `{0}` cannot be executed - is it installed?")]
     HaplotypeDependencyMissing(String),
-
-
     /// Represents an error when a sequence record identifier could not be parsed
     #[error("Consensus record identifier could not be parsed")]
     NeedltailRecordIdentifierNotParsed,
-    /// Indicates failure to read file from command line option
-    #[error("failed to read file from option")]
-    FileInputError,
-    /// Indicates a failure to get sequence length require for coverage plots
-    #[error("failed to get sequence length for coverage plot")]
-    CovPlotSeqLengthError(),
     /// Indicates failure with the coverage plot module
     #[error("failed to generate data for coverage plot")]
     CovPlot(#[from] crate::covplot::CovPlotError),
@@ -104,36 +90,20 @@ pub enum VircovError {
     #[error("failed to parse a valid integer from record")]
     FloatError(#[from] std::num::ParseFloatError),
     /// Indicates failure to conduct grouping because no reference sequences were parsed
-    #[error("failed to group outputs due to missing reference sequences")]
-    GroupSequenceError,
-    /// Indicates failure to plot coverage when data is grouped
-    #[error("coverage plots are not enabled when grouping output")]
-    GroupCovPlotError,
-    /// Indicates failure to infer or identify file format from explicit option
-    #[error("failed to parse a valid input format")]
-    InputFormatError,
-    /// Indicates failure when no grouping options are provided and selection is specified
-    #[error("failed to use the group selection options becuase no grouping is specified")]
-    GroupSelectSplitError,
-    /// Indicates failure when no group select by is provided (should not occurr)
-    #[error("failed to group select by reads or coverage")]
-    GroupSelectByError,
-    /// Indicates failure when no group select by is provided (should not occurr)
-    #[error("failed to provide a negative segment field")]
-    SegmentFieldNaNError,
+    #[error("failed to bin alignments - no reference sequences were provided")]
+    BinSequenceError,
     /// Indicates failure when no best value from the grouped coverage fields could be selected
     #[error("failed to select a best reference sequence")]
-    GroupSelectReference,
+    BinSelectReference,
     /// Indicates failure when no reference name could be selected from the grouped identifier
-    #[error("failed to extract a reference name from the grouped identifier")]
-    GroupSelectReferenceName,
+    #[error("failed to extract a reference name from the bin identifier")]
+    BinSelectReferenceName,
     /// Indicates failure when no coverage value could be extracted from a group of coverage fields
-    #[error("failed to extract the highest coverage value from the grouped fields")]
-    GroupSelectCoverage,
+    #[error("failed to extract the highest coverage value from the binned fields")]
+    BinSelectCoverage,
     /// Indicates failure when zero-value reference sequences should be included, but no reference sequences were provided
     #[error("no reference sequences found, zero-value records cannot be included")]
     ZeroReferenceSequences,
-
     // Indicates failure to find a matching scan record for a remap record - 
     /// remap records should always subsets of scan records
     #[error("failed get a matching remap record for the scan record of reference: {0}")]
@@ -153,13 +123,10 @@ pub enum VircovError {
     /// the consensus sequnces for each segment in the pipeline)
     #[error("multiple coverage references found for reference: {0}")]
     CoverageMatchNotIdentifiable(String),
-
     /// Indicates failure to get output read paths based on input reads
     #[error("invalid number of input read files: {0}")]
     NumberInputReadFilesInvalid(usize),
-
     /// Indicates failure attempting to read an empty sequence file
     #[error("empty sequence file: {0}")]
     FastaFileIsEmpty(PathBuf),
-    
 }

@@ -48,7 +48,8 @@ fn main() -> Result<()> {
                 args.table,
                 args.select_by.clone(),
                 None, 
-                None
+                None,
+                args.remap_args.clone()
             )?;
 
         },

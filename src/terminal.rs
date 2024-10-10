@@ -80,9 +80,15 @@ pub struct RunArgs {
     /// Threads for scanning alignment
     #[clap(long, default_value = "8")]
     pub scan_threads: usize,
+    /// Additional arguments for scanning stage aligner
+    #[clap(long)]
+    pub scan_args: Option<String>,
     /// Threads for remapping against bin reference
     #[clap(long, default_value = "2")]
     pub remap_threads: usize,
+    /// Additional arguments for remap stage aligner
+    #[clap(long)]
+    pub remap_args: Option<String>,
     /// Remap all input reads instead of binned reads
     #[clap(long)]
     pub remap_all: bool,
@@ -149,6 +155,9 @@ pub struct CoverageArgs {
     /// Threads for alignment
     #[clap(long, short = 't', default_value = "4")]
     pub threads: usize,
+    /// Additional arguments for aligner
+    #[clap(long)]
+    pub args: Option<String>,
     /// Output aligned read identifiers
     #[clap(long)]
     pub read_id: Option<PathBuf>,

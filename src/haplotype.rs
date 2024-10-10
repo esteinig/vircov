@@ -11,8 +11,8 @@ pub enum HaplotypeVariantCaller {
 
 pub struct HaplotypeRecord {
     id: String,
-    snp: usize,
-
+    snps: usize,
+    
 }
 
 
