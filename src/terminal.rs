@@ -39,31 +39,31 @@ pub struct RunArgs {
     /// This parameter is required and multiple files can be specified (1 for long
     /// reads or 2 for paired-end short reads) either consecutively or using multiple
     /// input arguments, for example: '-i R1.fq.gz -i R2.fq.gz' or '-i R1.fq.gz R2.fq.gz'
-    #[arg(short, long, num_args(0..))]
+    #[arg(short, long, num_args(1..), required=true, value_parser = validate_file)]
     pub input: Vec<PathBuf>,
-    /// Output summary table of coverage and assembly metrics
+    /// Output summary table of coverage and assembly metrics (.tsv)
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Reference sequences with header annotations for binning
+    #[arg(long, short='r')]
+    pub reference: PathBuf,
+    /// Aligner used for scanning and binned realignment 
+    #[arg(long, short='a', default_value="minimap2")]
+    pub aligner: Aligner,
     /// Reference index for aligner
     ///
     /// Alignment index for 'bowtie2' (index), 'minimap2' (index | fasta) 
     /// and 'strobealign' (index | fasta)
     #[arg(long, short='I')]
     pub index: PathBuf,
-    /// Reference sequences with header annotations for binning
-    #[arg(long, short='R')]
-    pub reference: PathBuf,
-    /// Aligner
-    #[arg(long, short='A', default_value="minimap2")]
-    pub aligner: Aligner,
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
     /// Annotation preset for reference headers
-    #[arg(long, short='a', default_value="default")]
-    pub annotation: AnnotationPreset,
+    #[arg(long, short='A', default_value="default")]
+    pub annotation_preset: AnnotationPreset,
     /// Select a representative genome from the groups by reads or coverage
-    #[clap(long, short='b', default_value="coverage")]
+    #[clap(long, short='s', default_value="coverage")]
     pub select_by: SelectHighest,
     /// Parallel tasks for remapping against bin reference
     #[clap(long, short = 'p', default_value = "4")]
@@ -95,7 +95,10 @@ pub struct RunArgs {
     /// Include secondary alignments in scanning alignment
     #[clap(long)]
     pub secondary: bool,
-    /// Minimum bin reference coverage required for consensus assembly 
+    /// Minimum depth of bin-reference coverage for summary table (summary metric, does not affect other computations)
+    #[clap(long, default_value="10")]
+    pub min_depth_coverage: Option<usize>,
+    /// Minimum bin-reference coverage required for consensus assembly  (fraction, 0 -1) 
     #[clap(long, default_value="0.2")]
     pub min_remap_coverage: f64,
     /// Minimum consensus assembly read depth to call a site
@@ -120,29 +123,29 @@ pub struct CoverageArgs {
     /// This parameter is required and multiple files can be specified (1 for long
     /// reads or 2 for paired-end short reads) either consecutively or using multiple
     /// input arguments, for example: '-i R1.fq.gz -i R2.fq.gz' or '-i R1.fq.gz R2.fq.gz'
-    #[arg(short, long, num_args(0..))]
+    #[arg(long, short, num_args(1..), value_parser = validate_file)]
     pub input: Vec<PathBuf>,
-    /// Output summary table of coverage metrics
-    #[arg(short, long)]
+    /// Output summary table of coverage metrics (.tsv)
+    #[arg(long, short)]
     pub output: PathBuf,
+    /// Reference sequences used in alignment (required for --zero)
+    #[arg(long, short='r')]
+    pub reference: Option<PathBuf>,
+    /// Aligner used for scanning coverage
+    #[arg(long, short='a', default_value="minimap2")]
+    pub aligner: Aligner,
     /// Reference index for aligner
     ///
     /// Depending on whether --aligner is chosen, the index is an alignment index 
     /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
     #[arg(long, short='I')]
     pub index: PathBuf,
-    /// Reference sequences used in alignment (required for --zero)
-    #[arg(long, short='R')]
-    pub reference: Option<PathBuf>,
-    /// Aligner
-    #[arg(long, short='A', default_value="minimap2")]
-    pub aligner: Aligner,
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
     /// Annotation preset for reference headers
-    #[arg(long, short='a', default_value="default")]
-    pub annotation: AnnotationPreset,
+    #[arg(long, short='A', default_value="default")]
+    pub annotation_preset: AnnotationPreset,
     /// Working directory
     #[clap(long, short = 'w', default_value = ".")]
     pub workdir: Option<PathBuf>,
@@ -373,6 +376,21 @@ pub struct DistArgs {
     /// Threads for distance matrix computation
     #[clap(long, short = 't', default_value = "8")]
     pub threads: usize,
+}
+
+/// Validator function to check if each file exists and is valid
+fn validate_file(file: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(file);
+
+    if !path.exists() {
+        return Err(format!("File not found: {}", file));
+    }
+
+    if !path.is_file() {
+        return Err(format!("Not a valid file: {}", file));
+    }
+
+    Ok(path)
 }
 
 pub fn get_styles() -> clap::builder::Styles {

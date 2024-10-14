@@ -131,7 +131,7 @@ where
     deserializer.deserialize_seq(IntervalVisitor)
 }
 
-/// A struct for computed output fields
+/// A struct for a distinct region of alignment
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Coverage {
     /// Name of the target sequence
@@ -148,13 +148,13 @@ pub struct Coverage {
     pub length: u64,
     /// Fractional coverage of the alignments
     pub coverage: f64,
-    /// Descriptions of the reference sequence headers
-    pub group: Option<String>,
-    /// Descriptions of the reference sequence headers
+    /// Bin of the reference sequence header annotation
+    pub bin: Option<String>,
+    /// Segment of the reference sequence header annotation
     pub segment: Option<String>,
-    /// Descriptions of the reference sequence headers
+    /// Name of the reference sequence header annotation
     pub name: Option<String>,
-    /// Descriptions of the reference sequence headers
+    /// Descriptions of the reference sequence header annotation
     pub description: String,
     #[serde(skip)]
     /// Tags for alignment regions in string format
@@ -512,6 +512,15 @@ impl VircovAligner {
             #[cfg(feature = "mm2")]
             Aligner::Minimap2Rs => self.run_minimap2_rs()?,
         }
+    }
+    pub fn run_depth_coverage(&self, bam: &PathBuf, output: &PathBuf, min_depth_coverage: usize) -> Result<(), VircovError> {
+
+        let cmd = format!("samtools depth -a {bam} > {depth}", bam=bam.display(), depth=output.display());
+
+        self.run_command(&cmd)?;
+
+        Ok(())
+
     }
     fn run_version_command(&self, command: &str) -> Result<Output, VircovError> {
         let output = Command::new("sh")
@@ -1044,7 +1053,7 @@ impl ReadAlignment {
                     length: target_len,
                     coverage: target_cov,
                     description: target_description,
-                    group: annotation.bin,
+                    bin: annotation.bin,
                     segment: annotation.segment,
                     name: annotation.name,
                     read_id: unique_read_ids,
@@ -1080,7 +1089,7 @@ impl ReadAlignment {
                                 length: record.sequence().len() as u64,
                                 coverage: 0.0,
                                 description: descr,
-                                group: annotation.bin,
+                                bin: annotation.bin,
                                 segment: annotation.segment,
                                 name: annotation.name,
                                 read_id: Vec::new(),

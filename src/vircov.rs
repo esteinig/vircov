@@ -178,7 +178,7 @@ impl Vircov {
         let mut coverage_bins: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
 
         for cov in coverage {
-            if let Some(group) = &cov.group {
+            if let Some(group) = &cov.bin {
                 match coverage_bins.entry(group.to_string()) {
                     Entry::Occupied(mut entry) => {
                         entry.get_mut().push(cov);
@@ -438,6 +438,11 @@ impl Vircov {
                         .run_aligner()?
                         .unwrap()
                         .coverage(true, false)?;
+                    
+                    if let Some(min_depth_coverage) = self.config.alignment.min_depth_coverage {
+                        let depth = outdir.join(remap_id).with_extension("depth");
+                        remap_aligner.run_depth_coverage(&bam, &depth, min_depth_coverage)?;
+                    }
 
                     // Remove the group reads after alignment - take up a lot of disk space
                     if let Some(bin_reads) = bin_read_files {
@@ -609,11 +614,12 @@ impl VircovConfig {
                 Some(outdir.join("scan.bam")),
                 args.scan_threads,
                 args.scan_args.clone(),
-                !args.remap_all
+                !args.remap_all,
+                args.min_depth_coverage
             ),
             reference: ReferenceConfig::with_default(
                 Some(args.reference.clone()),
-                args.annotation.clone()
+                args.annotation_preset.clone()
             ),
             consensus: ConsensusConfig::with_default_from_args(
                 args.min_consensus_depth,
@@ -648,11 +654,12 @@ impl VircovConfig {
                 Some(outdir.join("scan.bam")),
                 args.threads,
                 args.args.clone(),
-                false
+                false,
+                None
             ),
             reference: ReferenceConfig::with_default(
                 args.reference.clone(),
-                args.annotation.clone()
+                args.annotation_preset.clone()
             ),
             filter: FilterConfig::default(),
             consensus: ConsensusConfig::default(), // not used
@@ -688,6 +695,7 @@ pub struct AlignmentConfig {
     pub output: Option<PathBuf>,
     pub threads: usize,
     pub remap_bin_reads: bool,
+    pub min_depth_coverage: Option<usize>,
 }
 impl AlignmentConfig {
     pub fn remap_config(
@@ -731,7 +739,8 @@ impl AlignmentConfig {
         output: Option<PathBuf>, 
         threads: usize,
         args: Option<String>,
-        remap_group_reads: bool
+        remap_bin_reads: bool,
+        min_depth_coverage: Option<usize>
     ) -> Self {
         Self {
             input: input.clone(),
@@ -743,7 +752,8 @@ impl AlignmentConfig {
             secondary,
             threads,
             args,
-            remap_bin_reads: remap_group_reads,
+            remap_bin_reads,
+            min_depth_coverage,
             ..Default::default()
         }
     }
@@ -776,7 +786,8 @@ impl Default for AlignmentConfig {
             index: PathBuf::from("reference.fasta"),
             output: Some(PathBuf::from("test.sam")),
             threads: 8,
-            remap_bin_reads: true
+            remap_bin_reads: true,
+            min_depth_coverage: Some(10)
         }
     }
 }
