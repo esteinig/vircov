@@ -210,13 +210,14 @@ pub fn parse_fastx_file_with_check<P: AsRef<Path>>(path: P) -> Result<Option<Box
     }
 }
 
-pub fn get_tsv_reader(file: &Path, flexible: bool) -> Result<Reader<Box<dyn Read>>, VircovError> {
+pub fn get_tsv_reader(file: &Path, flexible: bool, header: bool) -> Result<Reader<Box<dyn Read>>, VircovError> {
 
     let buf_reader = BufReader::new(File::open(&file)?);
     let (reader, _format) = get_reader(Box::new(buf_reader))?;
 
     let csv_reader = ReaderBuilder::new()
         .delimiter(b'\t')
+        .has_headers(header)
         .flexible(flexible) // Allows records with a different number of fields
         .from_reader(reader);
 
@@ -249,9 +250,9 @@ pub fn write_tsv<T: Serialize>(data: &Vec<T>, file: &Path) -> Result<(), VircovE
     Ok(())
 }
 
-pub fn read_tsv<T: for<'de>Deserialize<'de>>(file: &Path, flexible: bool) -> Result<Vec<T>, VircovError> {
+pub fn read_tsv<T: for<'de>Deserialize<'de>>(file: &Path, flexible: bool, header: bool) -> Result<Vec<T>, VircovError> {
 
-    let mut reader = get_tsv_reader(file, flexible)?;
+    let mut reader = get_tsv_reader(file, flexible, header)?;
 
     let mut records = Vec::new();
     for record in reader.deserialize() {

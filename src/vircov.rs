@@ -1,4 +1,4 @@
-use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, CoverageBin, Preset, ReadAlignment, SelectHighest, VircovAligner};
+use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, CoverageBin, DepthCoverageRecord, Preset, ReadAlignment, SelectHighest, VircovAligner};
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
@@ -48,7 +48,9 @@ impl Vircov {
         select_by: SelectHighest,
         alignment: Option<PathBuf>,
         alignment_format: Option<AlignmentFormat>,
-        remap_args: Option<String>
+        remap_args: Option<String>,
+        remap_filter_args: Option<String>,
+        include_scans: bool
     ) -> Result<(), VircovError> {
 
         log::info!("Alignment scan against reference database ({})", self.config.alignment.aligner);
@@ -64,11 +66,11 @@ impl Vircov {
             "Reference alignment binning using '{}' field", 
             self.config.reference.annotation.bin
         );
-        let grouped = self.bin_alignments(&coverage)?;
+        let coverage_bins = self.bin_alignments(&coverage)?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
-            &grouped, 
+            &coverage_bins, 
             select_by,
             None
         )?;
@@ -76,7 +78,7 @@ impl Vircov {
         let bin_read_files = if self.config.alignment.remap_bin_reads {
             log::info!("Extracting binned reads to working directory for remapping");
             Some(self.extract_bin_reads(
-                &grouped,
+                &coverage_bins,
                 &self.config.outdir.clone(),
                 self.config.alignment.threads, // scanning threads for group read extraction
             )?)
@@ -87,10 +89,11 @@ impl Vircov {
         
 
         log::info!("Starting bin remapping and consensus assembly ({})", self.config.alignment.aligner);
-        let (consensus, remap) = self.remap(
+        let (consensus, remap, depth) = self.remap(
             &selections, 
             bin_read_files,
             remap_args,
+            remap_filter_args,
             &self.config.outdir.clone(), 
             parallel, 
             threads, 
@@ -98,8 +101,14 @@ impl Vircov {
             keep
         )?;
 
-        let scan = selections.values().flatten().cloned().collect();
-        let summary = self.summary(consensus, scan, remap)?;
+        
+        let scan = if include_scans {
+            coverage
+        } else {
+            selections.values().flatten().cloned().collect()
+        };
+
+        let summary = self.summary(consensus, scan, remap, depth)?;
 
         log::info!("Writing output table to: {}", tsv.display());
         if table { summary.print_table(true); }
@@ -158,6 +167,7 @@ impl Vircov {
     ) -> Result<ReadAlignment, VircovError> {
 
         let aligner = VircovAligner::from(
+            &self.config.outdir,
             &self.config.alignment, 
             &&self.config.reference, 
             &self.config.filter
@@ -370,7 +380,6 @@ impl Vircov {
                     _ => return Err(VircovError::BinSelectReference),
                 }
             }
-
         }
 
         Ok(selected_reference_coverage)
@@ -380,12 +389,13 @@ impl Vircov {
         selections: &HashMap<String, Vec<Coverage>>, 
         bin_read_files: Option<HashMap<String, Vec<PathBuf>>>,
         remap_args: Option<String>,
+        remap_filter_args: Option<String>,
         outdir: &PathBuf,
         parallel: usize, 
         threads: usize,
         consensus: bool,
         keep: bool
-    ) -> Result<(Vec<ConsensusRecord>, Vec<Coverage>), VircovError> {
+    ) -> Result<(Vec<ConsensusRecord>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
 
         let refs = self.references
             .as_ref()
@@ -395,11 +405,11 @@ impl Vircov {
             .num_threads(parallel)
             .build()
             .expect("Failed to create thread pool")
-            .install(|| -> Result<(Vec<ConsensusRecord>, Vec<Coverage>), VircovError> {
+            .install(|| -> Result<(Vec<ConsensusRecord>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
 
-            let results: Vec<Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError>> = selections
+            let results: Vec<Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError>> = selections
                 .into_par_iter()
-                .map(|(bin, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>), VircovError> {
+                .map(|(bin, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
                     
                     let remap_id = bin;
 
@@ -421,9 +431,11 @@ impl Vircov {
                     let bam = outdir.join(remap_id).with_extension("bam");
 
                     let remap_aligner = VircovAligner::from(
+                        &self.config.outdir,
                         &self.config.alignment.remap_config(
-                            &remap_reference, 
-                            remap_args.clone(), 
+                            None, // uses remap reference
+                            remap_args.clone(),
+                            remap_filter_args.clone(),
                             bin_read_files.cloned(),
                             Some(bam.clone()), 
                             threads
@@ -434,16 +446,10 @@ impl Vircov {
                         &self.config.filter,
                     );
 
-                    let remap_coverage = remap_aligner
+                    let remap_coverage: Vec<Coverage> = remap_aligner
                         .run_aligner()?
                         .unwrap()
                         .coverage(true, false)?;
-                    
-                    if let Some(min_depth_coverage) = self.config.alignment.min_depth_coverage {
-                        let depth = outdir.join(remap_id).with_extension("depth");
-                        remap_aligner.run_depth_coverage(&bam, &depth, min_depth_coverage)?;
-                    }
-
                     // Remove the group reads after alignment - take up a lot of disk space
                     if let Some(bin_reads) = bin_read_files {
                         for file in bin_reads {
@@ -452,45 +458,61 @@ impl Vircov {
                     }
 
                     let mut consensus_records = Vec::new();
+                    let mut depth_records = Vec::new();
 
-                    if consensus {
-                        for ref_cov in &remap_coverage {
-                            if ref_cov.coverage >= self.config.filter.min_remap_coverage {
-    
-                                // Reference output must have extension '.fa' matching auto-extension from iVar
-                                let (filter_reference, consensus_name, variants_name) = match &ref_cov.segment {
-                                    Some(segment) => {
-                                        let seg = self.config.reference.annotation.segment_name_file(segment);
-                                        (
-                                            Some(ref_cov.reference.clone()), 
-                                            format!("{bin}.{seg}.consensus.fa"),
-                                            format!("{bin}.{seg}.variants.tsv"),
-                                        )
-                                    }, 
-                                    None => (
-                                        None, 
-                                        format!("{bin}.nan.consensus.fa"),
-                                        format!("{bin}.nan.variants.tsv"),
+                    for ref_cov in &remap_coverage {
+
+                        let seg_name = match &ref_cov.segment {
+                            Some(seg) => self.config.reference.annotation.segment_name_file(seg),
+                            None => "nan".to_string()
+                        };
+                                            
+                        let depth = outdir.join(format!("{bin}.{seg_name}.depth"));
+                        let depth_coverage = remap_aligner.run_depth_coverage(
+                            &bam, 
+                            &ref_cov.reference,
+                            &depth, 
+                            self.config.alignment.min_depth_coverage,
+                            ref_cov.segment.clone()
+                        )?;
+
+                        depth_records.push(depth_coverage);
+
+                        if consensus && ref_cov.coverage >= self.config.filter.min_remap_coverage {
+
+                            // Reference output must have extension '.fa' matching auto-extension from iVar
+                            let (filter_reference, consensus_name, _) = match &ref_cov.segment {
+                                Some(segment) => {
+                                    let seg = self.config.reference.annotation.segment_name_file(segment);
+                                    (
+                                        Some(ref_cov.reference.clone()), 
+                                        format!("{bin}.{seg}.consensus.fa"),
+                                        format!("{bin}.{seg}.variants.tsv"),
                                     )
-                                };
-    
-                                log::info!("Creating consensus assembly from bin alignment '{bin}': {consensus_name}");
-                                let consensus = VircovConsensus::new(
-                                    ConsensusConfig::with_default(
-                                        &bam.clone(), 
-                                        &outdir.join(consensus_name), 
-                                        filter_reference,
-                                        Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
-                                        self.config.consensus.min_quality,
-                                        self.config.consensus.min_frequency,
-                                        self.config.consensus.min_depth
-                                    )
-                                )?;
-    
-                                let records = consensus.assemble()?;
-    
-                                consensus_records.push(records)
-                            }
+                                }, 
+                                None => (
+                                    None, 
+                                    format!("{bin}.nan.consensus.fa"),
+                                    format!("{bin}.nan.variants.tsv"),
+                                )
+                            };
+
+                            log::info!("Creating consensus assembly from bin alignment '{bin}': {consensus_name}");
+                            let consensus = VircovConsensus::new(
+                                ConsensusConfig::with_default(
+                                    &bam.clone(), 
+                                    &outdir.join(consensus_name), 
+                                    filter_reference,
+                                    Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
+                                    self.config.consensus.min_quality,
+                                    self.config.consensus.min_frequency,
+                                    self.config.consensus.min_depth
+                                )
+                            )?;
+
+                            let records = consensus.assemble()?;
+
+                            consensus_records.push(records)
                         }
                     }
 
@@ -503,15 +525,16 @@ impl Vircov {
                         
                     }
 
-                    Ok((consensus_records, remap_coverage))
+                    Ok((consensus_records, remap_coverage, depth_records))
                 })
                 .collect();
 
             let mut remap_data = Vec::new();
             let mut consensus_data = Vec::new();
+            let mut depth_data = Vec::new();
 
             for result in results {
-                let (consensus, remap) = result?;
+                let (consensus, remap, depth_coverage) = result?;
                 
                 for consensus_record in consensus.into_iter().flatten() {
                     consensus_data.push(consensus_record)
@@ -519,9 +542,12 @@ impl Vircov {
                 for cov in remap.into_iter() {
                     remap_data.push(cov)
                 }
+                for depth in depth_coverage.into_iter() {
+                    depth_data.push(depth)
+                }
             }
 
-            Ok((consensus_data, remap_data))
+            Ok((consensus_data, remap_data, depth_data))
         })
 
     }
@@ -553,7 +579,8 @@ impl Vircov {
         &self, 
         consensus: Vec<ConsensusRecord>, 
         scan: Vec<Coverage>, 
-        remap: Vec<Coverage>
+        remap: Vec<Coverage>,
+        depth: Vec<DepthCoverageRecord>
     ) -> Result<VircovSummary, VircovError> {
 
         VircovSummary::new(
@@ -573,6 +600,7 @@ impl Vircov {
                 false, 
                 None
             )).collect(),
+            depth,
             consensus,
             &&self.config.reference.annotation
         )
@@ -606,14 +634,14 @@ impl VircovConfig {
             outdir: outdir.clone(),
             alignment: AlignmentConfig::with_default(
                 &args.input, 
-                &args.index, 
+                args.index.clone(), 
                 args.aligner.clone(), 
                 args.preset.clone(), 
-                false, 
                 args.secondary,
                 Some(outdir.join("scan.bam")),
                 args.scan_threads,
                 args.scan_args.clone(),
+                args.scan_filter_args.clone(),
                 !args.remap_all,
                 args.min_depth_coverage
             ),
@@ -646,14 +674,14 @@ impl VircovConfig {
             outdir: outdir.clone(),
             alignment: AlignmentConfig::with_default(
                 &args.input, 
-                &args.index, 
+                args.index.clone(), 
                 args.aligner.clone(), 
                 args.preset.clone(), 
-                false, 
                 args.secondary,
                 Some(outdir.join("scan.bam")),
                 args.threads,
                 args.args.clone(),
+                None,
                 false,
                 None
             ),
@@ -687,10 +715,10 @@ pub struct AlignmentConfig {
     pub aligner: Aligner,
     pub preset: Option<Preset>,
     pub args: Option<String>,
+    pub filter_args: Option<String>,
     pub input: Vec<PathBuf>,
     pub paired_end: bool,
-    pub index: PathBuf,
-    pub create_index: bool,
+    pub index: Option<PathBuf>,
     pub secondary: bool,
     pub output: Option<PathBuf>,
     pub threads: usize,
@@ -700,8 +728,9 @@ pub struct AlignmentConfig {
 impl AlignmentConfig {
     pub fn remap_config(
         &self, 
-        index: &PathBuf, 
+        index: Option<PathBuf>, 
         args: Option<String>,
+        filter_args: Option<String>,
         input: Option<Vec<PathBuf>>,
         output: Option<PathBuf>, 
         threads: usize,
@@ -720,25 +749,24 @@ impl AlignmentConfig {
             config.input = input;
         };
 
-
-        config.create_index = true;
         config.args = args;
         config.index = index.clone();
         config.threads = threads;
         config.output = output;
+        config.filter_args = filter_args;
 
         config
     }
     pub fn with_default(
         input: &Vec<PathBuf>, 
-        index: &PathBuf, 
+        index: Option<PathBuf>, 
         aligner: Aligner, 
         preset: Option<Preset>, 
-        create_index: bool, 
         secondary: bool, 
         output: Option<PathBuf>, 
         threads: usize,
         args: Option<String>,
+        filter_args: Option<String>,
         remap_bin_reads: bool,
         min_depth_coverage: Option<usize>
     ) -> Self {
@@ -748,10 +776,10 @@ impl AlignmentConfig {
             aligner,
             preset,
             output,
-            create_index,
             secondary,
             threads,
             args,
+            filter_args,
             remap_bin_reads,
             min_depth_coverage,
             ..Default::default()
@@ -779,11 +807,11 @@ impl Default for AlignmentConfig {
             aligner: Aligner::Minimap2,
             preset: Some(Preset::Sr),
             args: None,
+            filter_args: None,
             input: Vec::from([PathBuf::from("smoke_R1.fastq.gz"), PathBuf::from("smoke_R2.fastq.gz")]),
             paired_end: true,
-            create_index: false,
             secondary: false,
-            index: PathBuf::from("reference.fasta"),
+            index: Some(PathBuf::from("reference.fasta")),
             output: Some(PathBuf::from("test.sam")),
             threads: 8,
             remap_bin_reads: true,
@@ -1005,6 +1033,13 @@ pub fn display_option_u64(opt: &Option<u64>) -> String
     }
 }
 
+pub fn display_option_usize(opt: &Option<usize>) -> String 
+{
+    match opt {
+        Some(s) => format!("{}", s),
+        None => format!(""),
+    }
+}
 
 pub fn display_option_f64(opt: &Option<f64>) -> String 
 {
@@ -1028,9 +1063,9 @@ pub struct VircovRecord {
     #[tabled(skip)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assembler: Option<ConsensusAssembler>,
-    #[tabled(rename="Taxid")]
+    #[tabled(rename="Bin")]
     #[tabled(display_with = "display_option_string")]
-    pub taxid: Option<String>,
+    pub bin: Option<String>,
     #[tabled(rename="Name")]
     #[tabled(display_with = "display_option_string")]
     pub name: Option<String>,
@@ -1071,7 +1106,11 @@ pub struct VircovRecord {
     #[tabled(rename="Coverage")]
     #[tabled(display_with = "display_option_f64")]
     pub remap_coverage: Option<f64>,
-    // pub remap_mean_depth: Option<f64>,
+    #[tabled(display_with = "display_option_f64")]
+    pub remap_depth: Option<f64>,
+    #[tabled(rename="Coverage (depth >= X)")]
+    #[tabled(display_with = "display_option_f64")]
+    pub remap_depth_coverage: Option<f64>,
     #[tabled(skip)]
     #[tabled(rename="Consensus Length")]
     #[tabled(display_with = "display_option_u64")]
@@ -1094,6 +1133,7 @@ impl VircovRecord {
         annotation: Annotation, 
         scan_record: AlignmentRecord, 
         remap_record: Option<AlignmentRecord>, 
+        remap_depth_record: Option<DepthCoverageRecord>,
         consensus_record: Option<ConsensusRecord>, 
     ) -> Result<Self, VircovError> {
         
@@ -1121,6 +1161,11 @@ impl VircovRecord {
             None => (None, None, None)
         };
 
+        let (mean_depth, mean_depth_coverage_percent) = match remap_depth_record {
+            Some(record) => (Some(record.mean_depth), Some(record.mean_depth_coverage*100.0)),
+            None => (None, None)
+        };
+
 
         Ok(Self {
             id: None,
@@ -1145,10 +1190,12 @@ impl VircovRecord {
             remap_alignments,
             remap_bases_covered,
             remap_coverage,
+            remap_depth: mean_depth,
+            remap_depth_coverage: mean_depth_coverage_percent,
             consensus_length,
             consensus_missing,
             consensus_completeness,
-            taxid: annotation.bin,
+            bin: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
             reference_description: scan_record.description,
@@ -1176,10 +1223,12 @@ impl VircovRecord {
             remap_alignments: None,
             remap_bases_covered: None,
             remap_coverage: None,
+            remap_depth: None,
+            remap_depth_coverage: None,
             consensus_length: None,
             consensus_missing: None,
             consensus_completeness: None,
-            taxid: None,
+            bin: None,
             name: None,
             segment: None,
             reference_description: scan_record.description
@@ -1252,6 +1301,7 @@ impl VircovSummary {
         assembler: Option<ConsensusAssembler>, 
         scan_records: Vec<AlignmentRecord>,
         remap_records: Vec<AlignmentRecord>, 
+        depth_records: Vec<DepthCoverageRecord>,
         consensus_records: Vec<ConsensusRecord>, 
         annotation_options: &AnnotationConfig,
     )-> Result<Self, VircovError> {
@@ -1263,13 +1313,13 @@ impl VircovSummary {
 
             let scan_annotation = Annotation::from(&scan_record.description, &annotation_options);
 
-            // We can have multiple results with the same reference  if the reference was segmented. We therefore extract the 
+            // We can have multiple results with the same reference if the reference was segmented. We therefore extract the 
             // segment description from the record annotations and append the extracted segment
 
             let matching_records: Vec<&AlignmentRecord> = remap_records.iter().filter(|remap_record| {
                 let mut scan_id = scan_record.reference.clone();
                 let mut remap_id = remap_record.reference.clone();
-                if let Some(segment) =  scan_annotation.segment.clone() {
+                if let Some(segment) = scan_annotation.segment.clone() {
                     scan_id.push_str(&segment);
                     remap_id.push_str(&segment);
                 };
@@ -1321,6 +1371,16 @@ impl VircovSummary {
                 }
             };
 
+
+            // Find the corresponding depth coverage record
+            let depth_record = depth_records.iter().find(|depth_record| {
+                let mut scan_id = matched_records.scan.reference.clone();
+                if let Some(segment) = annotation.segment.clone() {
+                    scan_id.push_str(&segment); // record.id field for depth_record has this done when it is created
+                };
+                scan_id == depth_record.id
+            });
+
             summary_records.push(
                 VircovRecord::from(
                     index.clone(),
@@ -1329,7 +1389,8 @@ impl VircovSummary {
                     annotation, 
                     matched_records.scan, 
                     matched_records.remap,
-                    consensus_record
+                    depth_record.cloned(),
+                    consensus_record,
                 )?
             )
         }
@@ -1378,7 +1439,7 @@ impl VircovSummary {
                     record.id = Some(dirname)
                 }
 
-                if let Some(min_completeness) = record.consensus_completeness {
+                if let Some(min_completeness) = min_completeness {
                     if let Some(completeness) = record.consensus_completeness {
                         if completeness >= min_completeness {
                             records.push(record)

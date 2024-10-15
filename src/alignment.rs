@@ -1,6 +1,6 @@
 use crate::covplot::CovPlot;
 use crate::error::VircovError;
-use crate::utils::get_niffler_fastx_reader_writer;
+use crate::utils::{get_file_component, get_niffler_fastx_reader_writer, read_tsv, FileComponent};
 use crate::vircov::{AlignmentConfig, FilterConfig, ReferenceConfig, VircovRecord};
 use crate::annotation::Annotation;
 
@@ -222,6 +222,7 @@ impl CoverageBin {
             coverage: Vec::new(),
             read_id: HashSet::new(),
         };
+
         let num_cov = coverage.len();
         let mut ureads: HashSet<String> = HashSet::new();
 
@@ -274,7 +275,6 @@ impl CoverageBin {
                 if self.read_id.contains(&id) {
                     record.write(&mut writer, None)?;
                 }
-
             }
 
             writer.flush()?;
@@ -481,16 +481,31 @@ impl std::fmt::Display for Aligner {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DepthRecord {
+    id: String,
+    location: usize,
+    depth: usize
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DepthCoverageRecord {
+    pub id: String,
+    pub min_depth_coverage: Option<usize>,
+    pub mean_depth_coverage: f64,
+    pub mean_depth: f64,
+}
 
 pub struct VircovAligner {
+    pub outdir: PathBuf,
     pub config: AlignmentConfig,
     pub reference: ReferenceConfig,
     pub filter: FilterConfig
 }
 impl VircovAligner {
-    pub fn from(config: &AlignmentConfig, reference: &ReferenceConfig, filter: &FilterConfig) -> Self {
+    pub fn from(outdir: &PathBuf, config: &AlignmentConfig, reference: &ReferenceConfig, filter: &FilterConfig) -> Self {
         Self {
-            config: config.clone(), reference: reference.clone(), filter: filter.clone()
+            outdir: outdir.to_path_buf(), config: config.clone(), reference: reference.clone(), filter: filter.clone()
         }
     }
     pub fn check_aligner_dependency(&self, aligner: &Aligner) -> Result<(), VircovError> {
@@ -513,13 +528,60 @@ impl VircovAligner {
             Aligner::Minimap2Rs => self.run_minimap2_rs()?,
         }
     }
-    pub fn run_depth_coverage(&self, bam: &PathBuf, output: &PathBuf, min_depth_coverage: usize) -> Result<(), VircovError> {
+    pub fn run_depth_coverage(&self, bam: &PathBuf, reference: &str, output: &PathBuf, min_depth_coverage: Option<usize>, segment: Option<String>) -> Result<DepthCoverageRecord, VircovError> {
 
-        let cmd = format!("samtools depth -a {bam} > {depth}", bam=bam.display(), depth=output.display());
+        let mut id = reference.to_string();
 
-        self.run_command(&cmd)?;
+        if let Some(min_depth_coverage) = min_depth_coverage {
 
-        Ok(())
+            if min_depth_coverage > 0 {
+                let cmd = format!("samtools index {bam} && samtools depth -a {bam} -r {reference} > {depth}", bam=bam.display(), depth=output.display());
+
+                self.run_command(&cmd)?;
+        
+                let depth_records: Vec<DepthRecord> = read_tsv(&output, false, false)?;
+                let genome_length = depth_records.len();
+                
+                if let Some(seg) = segment {
+                    id.push_str(&seg) // for later record matching
+                }
+    
+                if genome_length == 0 {
+                    return Ok(DepthCoverageRecord {
+                        id,
+                        min_depth_coverage: Some(min_depth_coverage),
+                        mean_depth_coverage: 0.,
+                        mean_depth: 0.0
+                    })
+                }
+
+                let average_depth = depth_records.iter().map(|r| r.depth).sum::<usize>() as f64 / depth_records.len() as f64;
+        
+                let bases_covered_filtered: usize = depth_records.into_iter().filter(|r| r.depth >= min_depth_coverage).collect::<Vec<_>>().len();
+                let average_depth_filtered = bases_covered_filtered as f64 / genome_length as f64;
+                
+                Ok(DepthCoverageRecord {
+                    id,
+                    min_depth_coverage: Some(min_depth_coverage),
+                    mean_depth_coverage: average_depth_filtered,
+                    mean_depth: average_depth
+                })
+            } else {
+                Ok(DepthCoverageRecord {
+                    id,
+                    min_depth_coverage: None,
+                    mean_depth_coverage: 0.0,
+                    mean_depth: 0.0
+                })
+            }
+        } else {
+            Ok(DepthCoverageRecord {
+                id,
+                min_depth_coverage,
+                mean_depth_coverage: 0.0,
+                mean_depth: 0.0
+            })
+        }
 
     }
     fn run_version_command(&self, command: &str) -> Result<Output, VircovError> {
@@ -552,30 +614,38 @@ impl VircovAligner {
             "--secondary=no"
         };
 
+        let index = match &self.config.index {
+            Some(index) => index,
+            None => match &self.reference.fasta {
+                Some(fasta) => fasta,
+                None => return Err(VircovError::AlignmentReferenceMissing)
+            }
+        };
 
         let cmd = if self.config.paired_end {
             format!(
-                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
+                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                self.config.index.display(),
+                index.display(),
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         } else {
             format!(
-                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
+                "minimap2 -ax {aligner_preset} {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                self.config.index.display(),
+                index.display(),
                 self.config.input[0].display(),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         };
 
         self.run_command(&cmd)?;
-
 
         let alignment = match &self.config.output {
             Some(output) => {
@@ -596,13 +666,19 @@ impl VircovAligner {
             None => String::from("")
         };
 
-        let index = match self.config.create_index {
-            true => {
-                let index_cmd = format!("bowtie2-build {} {}", self.config.index.display(), self.config.index.display());
-                self.run_command_no_stdout(&index_cmd)?;
-                &self.config.index
-            },
-            false => &self.config.index
+        
+        let index = match &self.config.index {
+            Some(index) => index.to_path_buf(),
+            None => match &self.reference.fasta {
+                Some(fasta) => {
+                    let index_base = self.outdir.join(get_file_component(&fasta, FileComponent::FileName)?);
+                    log::info!("Building index from input reference sequences ({})", index_base.display());
+                    let index_cmd = format!("bowtie2-build --threads {} {} {}", self.config.threads, fasta.display(), index_base.display());
+                    self.run_command_no_stdout(&index_cmd)?;
+                    index_base
+                },
+                None => return Err(VircovError::AlignmentReferenceMissing)
+            }
         };
 
         let secondary_arg = if self.config.secondary {
@@ -613,21 +689,23 @@ impl VircovAligner {
 
         let cmd = if self.config.paired_end {
             format!(
-                "bowtie2 {secondary_arg} -x '{}' -1 '{}' -2 '{}' --mm -p {} {aligner_args} | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output} ",
+                "bowtie2 {secondary_arg} -x '{}' -1 '{}' -2 '{}' --mm -p {} {aligner_args} | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output} ",
                 index.display(),
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
                 self.config.threads,
             )
         } else {
             format!(
-                "bowtie2 {secondary_arg} -x '{}' -U '{}' --mm -p {} {aligner_args} | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
+                "bowtie2 {secondary_arg} -x '{}' -U '{}' --mm -p {} {aligner_args} | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output}",
                 index.display(),
                 self.config.input[0].display(),
                 self.config.threads,
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         };
@@ -660,23 +738,33 @@ impl VircovAligner {
             ""       // no secondary alignments are output by default 
         };
 
+        let index = match &self.config.index {
+            Some(index) => index,
+            None => match &self.reference.fasta {
+                Some(fasta) => fasta,
+                None => return Err(VircovError::AlignmentReferenceMissing)
+            }
+        };
+
         let cmd = if self.config.paired_end {
             format!(
-                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
+                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' '{}' | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                self.config.index.display(),
+                index.display(),
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         } else {
             format!(
-                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} -hbF 12 - | samtools sort -@ {} - {output}",
+                "strobealign {secondary_arg} -t {} {aligner_args} '{}' '{}' | samtools view -@ {} {} -hb - | samtools sort -@ {} - {output}",
                 self.config.threads,
-                self.config.index.display(),
+                index.display(),
                 self.config.input[0].display(),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         };

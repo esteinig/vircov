@@ -13,7 +13,6 @@ use std::io::Write;
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::process::Command;
-use netview::prelude::*;
 use tar::Archive;
 
 /*

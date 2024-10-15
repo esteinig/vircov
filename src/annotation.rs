@@ -167,7 +167,7 @@ impl DatabaseAnnotation {
 
         Ok(Self {
             config,
-            annotations: read_tsv(&tsv, false)?,
+            annotations: read_tsv(&tsv, false, true)?,
         })
     }
     pub fn annotate(&self, fasta_in: &PathBuf, fasta_out: &PathBuf, skipped_out: Option<PathBuf>) -> Result<(), VircovError> {

@@ -51,6 +51,9 @@ pub enum VircovError {
     /// Represents an error when the alignment format is explicitly set and not recognized
     #[error("Unable to recognize alignment input format - is this version compiled with 'htslib'?")]
     AlignmentInputFormatInvalid,
+    /// Represents an error when the reference sequence file is missing and an index not provided
+    #[error("Unable to conduct alignment - index and reference are missing")]
+    AlignmentReferenceMissing,
     /// Represents an error when no preset is configured.
     #[error("Minimap2 was set as aligner but no preset was configured.")]
     MissingMinimap2Preset,

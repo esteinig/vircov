@@ -49,7 +49,9 @@ fn main() -> Result<()> {
                 args.select_by.clone(),
                 None, 
                 None,
-                args.remap_args.clone()
+                args.remap_args.clone(),
+                args.remap_filter_args.clone(),
+                args.include_scans
             )?;
 
         },

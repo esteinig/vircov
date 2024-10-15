@@ -48,22 +48,26 @@ pub struct RunArgs {
     #[arg(long, short='r')]
     pub reference: PathBuf,
     /// Aligner used for scanning and binned realignment 
-    #[arg(long, short='a', default_value="minimap2")]
+    #[arg(long, short='a', default_value="minimap2", help_heading="Alignment options")]
     pub aligner: Aligner,
     /// Reference index for aligner
     ///
     /// Alignment index for 'bowtie2' (index), 'minimap2' (index | fasta) 
     /// and 'strobealign' (index | fasta)
-    #[arg(long, short='I')]
-    pub index: PathBuf,
+    #[arg(long, short='I', help_heading="Alignment options")]
+    pub index: Option<PathBuf>,
     /// Aligner preset (minimap2)
-    #[arg(long, short='P', default_value="sr")]
+    #[arg(long, short='P', default_value="sr", help_heading="Alignment options")]
     pub preset: Option<Preset>,
-    /// Annotation preset for reference headers
-    #[arg(long, short='A', default_value="default")]
+    /// Annotation preset for reference headers (examples in long help)
+    /// 
+    /// 'default': bin=Species sp.|segment=NAN|name=Species|description=Species genome description
+    /// 'ictv': species=Species sp.|segment=NAN|name=Species|description=Species genome description
+    /// 'virosaurus': taxid=Species sp.;segment=N/A;name=Species;description=Species genome description
+    #[arg(long, short='A', default_value="default", help_heading="Binning options")]
     pub annotation_preset: AnnotationPreset,
     /// Select a representative genome from the groups by reads or coverage
-    #[clap(long, short='s', default_value="coverage")]
+    #[clap(long, short='s', default_value="coverage", help_heading="Binning options")]
     pub select_by: SelectHighest,
     /// Parallel tasks for remapping against bin reference
     #[clap(long, short = 'p', default_value = "4")]
@@ -78,40 +82,49 @@ pub struct RunArgs {
     #[clap(long, short = 'T')]
     pub table: bool,
     /// Threads for scanning alignment
-    #[clap(long, default_value = "8")]
+    #[clap(long, default_value = "8", help_heading="Scanning stage")]
     pub scan_threads: usize,
     /// Additional arguments for scanning stage aligner
-    #[clap(long)]
+    #[clap(long, help_heading="Scanning stage")]
     pub scan_args: Option<String>,
+    /// Additional arguments for scanning stage alignment filter (samtools)
+    #[clap(long, default_value="-F 12", help_heading="Scanning stage")]
+    pub scan_filter_args: Option<String>,
     /// Threads for remapping against bin reference
-    #[clap(long, default_value = "2")]
+    #[clap(long, default_value = "2", help_heading="Remap stage")]
     pub remap_threads: usize,
     /// Additional arguments for remap stage aligner
-    #[clap(long)]
+    #[clap(long, help_heading="Remap stage")]
     pub remap_args: Option<String>,
+    /// Additional arguments for scanning stage alignment filter (samtools)
+    #[clap(long, default_value="-F 12", help_heading="Remap stage")]
+    pub remap_filter_args: Option<String>,
     /// Remap all input reads instead of binned reads
-    #[clap(long)]
+    #[clap(long, help_heading="Remap stage")]
     pub remap_all: bool,
-    /// Include secondary alignments in scanning alignment
+    /// Include all scanning records in output table
     #[clap(long)]
+    pub include_scans: bool,
+    /// Include secondary alignments in scanning alignment
+    #[clap(long, help_heading="Alignment options")]
     pub secondary: bool,
     /// Minimum depth of bin-reference coverage for summary table (summary metric, does not affect other computations)
-    #[clap(long, default_value="10")]
+    #[clap(long, help_heading="Filter options")]
     pub min_depth_coverage: Option<usize>,
     /// Minimum bin-reference coverage required for consensus assembly  (fraction, 0 -1) 
-    #[clap(long, default_value="0.2")]
+    #[clap(long, default_value="0.2", help_heading="Filter options")]
     pub min_remap_coverage: f64,
     /// Minimum consensus assembly read depth to call a site
-    #[clap(long, default_value="10")]
+    #[clap(long, default_value="10", help_heading="Consensus stage")]
     pub min_consensus_depth: usize,
     /// Minimum consensus frequency to call a variant site
-    #[clap(long, default_value="0.75")]
+    #[clap(long, default_value="0.75", help_heading="Consensus stage")]
     pub min_consensus_frequency: f64,
     /// Minimum base quality to consider a site
-    #[clap(long, default_value="20")]
+    #[clap(long, default_value="20", help_heading="Consensus stage")]
     pub min_consensus_quality: usize,
     /// Do not create consensus genome from remapping stage
-    #[clap(long)]
+    #[clap(long, help_heading="Consensus stage")]
     pub no_consensus: bool,
 }
 
@@ -139,7 +152,7 @@ pub struct CoverageArgs {
     /// Depending on whether --aligner is chosen, the index is an alignment index 
     /// for 'bowtie2' (index), 'minimap2' and 'strobealign' (index or fasta).
     #[arg(long, short='I')]
-    pub index: PathBuf,
+    pub index: Option<PathBuf>,
     /// Aligner preset (minimap2)
     #[arg(long, short='P', default_value="sr")]
     pub preset: Option<Preset>,
