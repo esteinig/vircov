@@ -41,7 +41,7 @@ fn main() -> Result<()> {
 
             vircov.run(
                 &args.output, 
-                args.parallel, 
+                args.remap_parallel, 
                 args.remap_threads, 
                 !args.no_consensus, 
                 args.keep, 

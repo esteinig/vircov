@@ -919,7 +919,7 @@ pub struct HaplotypeConfig {
     pub fasta: PathBuf,
     pub output: PathBuf,
     pub threads: usize,
-    pub min_var_frequency: f64,
+    pub min_var_freq: f64,
 }
 impl HaplotypeConfig {
     pub fn with_default(
@@ -934,7 +934,7 @@ impl HaplotypeConfig {
             alignment,
             fasta,
             output,
-            min_var_frequency,
+            min_var_freq: min_var_frequency,
             ..Default::default()
         }
     }
@@ -948,7 +948,7 @@ impl Default for HaplotypeConfig {
             fasta: PathBuf::from(""),
             output: PathBuf::from(""),
             threads: 8,
-            min_var_frequency: 0.05
+            min_var_freq: 0.05
         }
     }
 }

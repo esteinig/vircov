@@ -70,8 +70,8 @@ pub struct RunArgs {
     #[clap(long, short='s', default_value="coverage", help_heading="Binning options")]
     pub select_by: SelectHighest,
     /// Parallel tasks for remapping against bin reference
-    #[clap(long, short = 'p', default_value = "4")]
-    pub parallel: usize,
+    #[clap(long, short = 'p', default_value = "4", help_heading="Remap stage")]
+    pub remap_parallel: usize,
     /// Working directory
     #[clap(long, short = 'w', default_value = ".")]
     pub workdir: Option<PathBuf>,
@@ -85,19 +85,19 @@ pub struct RunArgs {
     #[clap(long, default_value = "8", help_heading="Scanning stage")]
     pub scan_threads: usize,
     /// Additional arguments for scanning stage aligner
-    #[clap(long, help_heading="Scanning stage")]
+    #[clap(long, allow_hyphen_values=true, help_heading="Scanning stage")]
     pub scan_args: Option<String>,
     /// Additional arguments for scanning stage alignment filter (samtools)
-    #[clap(long, default_value="-F 12", help_heading="Scanning stage")]
+    #[clap(long, allow_hyphen_values=true, default_value="-F 12", help_heading="Scanning stage")]
     pub scan_filter_args: Option<String>,
     /// Threads for remapping against bin reference
     #[clap(long, default_value = "2", help_heading="Remap stage")]
     pub remap_threads: usize,
     /// Additional arguments for remap stage aligner
-    #[clap(long, help_heading="Remap stage")]
+    #[clap(long, allow_hyphen_values=true, help_heading="Remap stage")]
     pub remap_args: Option<String>,
     /// Additional arguments for scanning stage alignment filter (samtools)
-    #[clap(long, default_value="-F 12", help_heading="Remap stage")]
+    #[clap(long, allow_hyphen_values=true, default_value="-F 12", help_heading="Remap stage")]
     pub remap_filter_args: Option<String>,
     /// Remap all input reads instead of binned reads
     #[clap(long, help_heading="Remap stage")]
@@ -172,7 +172,7 @@ pub struct CoverageArgs {
     #[clap(long, short = 't', default_value = "4")]
     pub threads: usize,
     /// Additional arguments for aligner
-    #[clap(long)]
+    #[clap(long, allow_hyphen_values=true)]
     pub args: Option<String>,
     /// Output aligned read identifiers
     #[clap(long)]

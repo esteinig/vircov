@@ -535,7 +535,7 @@ impl VircovAligner {
         if let Some(min_depth_coverage) = min_depth_coverage {
 
             if min_depth_coverage > 0 {
-                let cmd = format!("samtools index {bam} && samtools depth -a {bam} -r {reference} > {depth}", bam=bam.display(), depth=output.display());
+                let cmd = format!("samtools index '{bam}' && samtools depth -a '{bam}' -r '{reference}' > {depth}", bam=bam.display(), depth=output.display());
 
                 self.run_command(&cmd)?;
         

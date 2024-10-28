@@ -252,6 +252,11 @@ pub fn write_tsv<T: Serialize>(data: &Vec<T>, file: &Path) -> Result<(), VircovE
 
 pub fn read_tsv<T: for<'de>Deserialize<'de>>(file: &Path, flexible: bool, header: bool) -> Result<Vec<T>, VircovError> {
 
+    if is_file_empty(&file)? {
+        log::warn!("File is empty: {}", file.display());
+        return Ok(vec![])
+    }
+
     let mut reader = get_tsv_reader(file, flexible, header)?;
 
     let mut records = Vec::new();
