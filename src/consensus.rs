@@ -67,7 +67,6 @@ impl VircovConsensus {
         let assembler_args = self.config.args.as_deref().unwrap_or("");
         let mpileup_args = self.config.mpileup.as_deref().unwrap_or("");
 
-
         let samtools_ref = match &self.config.reference {
             Some(reference) => format!("samtools index '{}' && samtools view -h '{}' '{reference}' |", self.config.alignment.display(), self.config.alignment.display()),
             None => format!("")

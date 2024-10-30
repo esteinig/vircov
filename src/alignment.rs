@@ -694,8 +694,8 @@ impl VircovAligner {
                 self.config.input[0].display(),
                 self.config.input[1].display(),
                 self.config.threads,
-                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
+                self.config.filter_args.clone().unwrap_or("".to_string()),
                 self.config.threads,
             )
         } else {

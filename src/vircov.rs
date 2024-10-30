@@ -2,9 +2,10 @@ use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
-use crate::haplotype::HaplotypeVariantCaller;
+use crate::haplotype::{HaplotypeVariantCaller, VircovHaplotype};
 use crate::terminal::{CoverageArgs, RunArgs};
 use crate::utils::{get_file_component, FileComponent};
+use crate::vircov;
 
 use itertools::Itertools;
 use anyhow::Result;
@@ -43,6 +44,7 @@ impl Vircov {
         parallel: usize, 
         threads: usize, 
         consensus: bool, 
+        haplotype: bool,
         keep: bool,
         table: bool,
         select_by: SelectHighest,
@@ -98,6 +100,7 @@ impl Vircov {
             parallel, 
             threads, 
             consensus, 
+            haplotype,
             keep
         )?;
 
@@ -394,6 +397,7 @@ impl Vircov {
         parallel: usize, 
         threads: usize,
         consensus: bool,
+        haplotype: bool,
         keep: bool
     ) -> Result<(Vec<ConsensusRecord>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
 
@@ -450,7 +454,8 @@ impl Vircov {
                         .run_aligner()?
                         .unwrap()
                         .coverage(true, false)?;
-                    // Remove the group reads after alignment - take up a lot of disk space
+
+                    // Remove binned reads after alignment - take up a lot of disk space
                     if let Some(bin_reads) = bin_read_files {
                         for file in bin_reads {
                             remove_file(file)?;
@@ -462,13 +467,26 @@ impl Vircov {
 
                     for ref_cov in &remap_coverage {
 
-                        let seg_name = match &ref_cov.segment {
-                            Some(seg) => self.config.reference.annotation.segment_name_file(seg),
-                            None => "nan".to_string()
+                                       
+                        // Reference output must have extension '.fa' matching auto-extension from iVar
+                        let (filter_reference, consensus_name, seg_name) = match &ref_cov.segment {
+                            Some(segment) => {
+                                let seg = self.config.reference.annotation.segment_name_file(segment);
+                                (
+                                    Some(ref_cov.reference.clone()), 
+                                    format!("{bin}.{seg}.consensus.fa"),
+                                    seg
+                                )
+                            }, 
+                            None => (
+                                None, 
+                                format!("{bin}.nan.consensus.fa"),
+                                String::from("nan"),
+                            )
                         };
-                                            
+
                         let depth = outdir.join(format!("{bin}.{seg_name}.depth"));
-                        let depth_coverage = remap_aligner.run_depth_coverage(
+                        let depth_coverage = remap_aligner.run_depth_coverage(  // runs only if min_depth_coverage is Some and > 0
                             &bam, 
                             &ref_cov.reference,
                             &depth, 
@@ -478,31 +496,27 @@ impl Vircov {
 
                         depth_records.push(depth_coverage);
 
+                        if haplotype && ref_cov.coverage >= self.config.filter.min_remap_coverage {
+
+                            let vircov_haplotype = VircovHaplotype::new(
+                                    outdir, 
+                                    HaplotypeConfig::with_default(
+                                    &bam, 
+                                    &remap_reference, 
+                                    filter_reference.clone(),
+                                )
+                            )?;
+                            vircov_haplotype.haplotype()?;
+                        }
+
                         if consensus && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
-                            // Reference output must have extension '.fa' matching auto-extension from iVar
-                            let (filter_reference, consensus_name, _) = match &ref_cov.segment {
-                                Some(segment) => {
-                                    let seg = self.config.reference.annotation.segment_name_file(segment);
-                                    (
-                                        Some(ref_cov.reference.clone()), 
-                                        format!("{bin}.{seg}.consensus.fa"),
-                                        format!("{bin}.{seg}.variants.tsv"),
-                                    )
-                                }, 
-                                None => (
-                                    None, 
-                                    format!("{bin}.nan.consensus.fa"),
-                                    format!("{bin}.nan.variants.tsv"),
-                                )
-                            };
-
                             log::info!("Creating consensus assembly from bin alignment '{bin}': {consensus_name}");
-                            let consensus = VircovConsensus::new(
+                            let vircov_consensus = VircovConsensus::new(
                                 ConsensusConfig::with_default(
                                     &bam.clone(), 
                                     &outdir.join(consensus_name), 
-                                    filter_reference,
+                                    filter_reference.clone(),
                                     Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
                                     self.config.consensus.min_quality,
                                     self.config.consensus.min_frequency,
@@ -510,7 +524,7 @@ impl Vircov {
                                 )
                             )?;
 
-                            let records = consensus.assemble()?;
+                            let records = vircov_consensus.assemble()?;
 
                             consensus_records.push(records)
                         }
@@ -622,7 +636,7 @@ impl VircovConfig {
     pub fn from_run_args(args: &RunArgs) -> Result<Self, VircovError> {
 
         let outdir = match &args.workdir {
-            None => PathBuf::from("."),
+            None => PathBuf::from("vircov_data"),
             Some(dir) => dir.to_owned()
         };
 
@@ -913,28 +927,29 @@ impl FilterConfig {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HaplotypeConfig {
-    pub enabled: bool,
     pub variant_caller: HaplotypeVariantCaller,
     pub alignment: PathBuf,
     pub fasta: PathBuf,
-    pub output: PathBuf,
+    pub reference: Option<String>,
     pub threads: usize,
     pub min_var_freq: f64,
+    pub snp_count_filter: usize,
+    pub snp_density: f64,
+    pub ploidy_sensitivity: u8,
+    pub min_consensus_quality: usize,
+    pub min_consensus_freq: f64,
+    pub min_consensus_depth: usize
 }
 impl HaplotypeConfig {
     pub fn with_default(
-        enabled: bool,
-        alignment: PathBuf,
-        fasta: PathBuf,
-        output: PathBuf,
-        min_var_frequency: f64,
+        alignment: &PathBuf,
+        fasta: &PathBuf,
+        reference: Option<String>,
     ) -> Self {
         Self {
-            enabled,
-            alignment,
-            fasta,
-            output,
-            min_var_freq: min_var_frequency,
+            alignment: alignment.to_path_buf(),
+            fasta: fasta.to_path_buf(),
+            reference: reference.to_owned(),
             ..Default::default()
         }
     }
@@ -942,13 +957,18 @@ impl HaplotypeConfig {
 impl Default for HaplotypeConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             variant_caller: HaplotypeVariantCaller::Freebayes,
             alignment: PathBuf::from(""),
             fasta: PathBuf::from(""),
-            output: PathBuf::from(""),
+            reference: None,            // ivar segment reference subset
             threads: 8,
-            min_var_freq: 0.05
+            min_var_freq: 0.05,         // not used currently
+            snp_count_filter: 5,
+            snp_density: 0.00001,
+            ploidy_sensitivity: 3,
+            min_consensus_quality: 10,
+            min_consensus_freq: 0.0,
+            min_consensus_depth: 1,
         }
     }
 }

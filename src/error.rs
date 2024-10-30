@@ -17,6 +17,9 @@ pub enum VircovError {
     /// Represents all other cases of `niffler::Error`.
     #[error(transparent)]
     NifflerError(#[from] niffler::Error),
+    /// Represents all other cases of `regex::Error`.
+    #[error(transparent)]
+    RegexError(#[from] regex::Error),
     /// Represents all other cases of `needletail::errors::ParseError`.
     #[error(transparent)]
     NeedletailParseError(#[from] needletail::errors::ParseError),

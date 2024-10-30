@@ -44,6 +44,7 @@ fn main() -> Result<()> {
                 args.remap_parallel, 
                 args.remap_threads, 
                 !args.no_consensus, 
+                args.haplotype,
                 args.keep, 
                 args.table,
                 args.select_by.clone(),
