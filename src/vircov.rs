@@ -52,6 +52,7 @@ impl Vircov {
         alignment_format: Option<AlignmentFormat>,
         remap_args: Option<String>,
         remap_filter_args: Option<String>,
+        remap_exclude_bins: Option<Vec<String>>,
         include_scans: bool
     ) -> Result<(), VircovError> {
 
@@ -68,7 +69,11 @@ impl Vircov {
             "Reference alignment binning using '{}' field", 
             self.config.reference.annotation.bin
         );
-        let coverage_bins = self.bin_alignments(&coverage)?;
+
+        let coverage_bins = self.bin_alignments(
+            &coverage, 
+            remap_exclude_bins
+        )?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
         let selections = self.select(
@@ -186,13 +191,22 @@ impl Vircov {
     }
     pub fn bin_alignments(
         &self,
-        coverage: &[Coverage]
+        coverage: &[Coverage],
+        exclude_bins: Option<Vec<String>>
     ) -> Result<Vec<CoverageBin>, VircovError> {
+
         let mut coverage_bins: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
 
         for cov in coverage {
-            if let Some(group) = &cov.bin {
-                match coverage_bins.entry(group.to_string()) {
+            if let Some(bin) = &cov.bin {
+
+                if let Some(ref exclude_bins) = exclude_bins {
+                    if exclude_bins.contains(bin) {
+                        continue;
+                    }
+                }
+
+                match coverage_bins.entry(bin.to_string()) {
                     Entry::Occupied(mut entry) => {
                         entry.get_mut().push(cov);
                     }

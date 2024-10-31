@@ -75,7 +75,7 @@ pub struct RunArgs {
     /// Minimum depth of bin-reference coverage for summary table (summary metric, does not affect other metrics)
     #[clap(long, default_value="1", help_heading="Filter options")]
     pub min_depth_coverage: Option<usize>,
-    /// Minimum bin-reference coverage required for consensus assembly  (fraction, 0 -1) 
+    /// Minimum bin-reference coverage required for consensus assembly (fraction, 0.0 - 1.0) 
     #[clap(long, default_value="0.2", help_heading="Filter options")]
     pub min_remap_coverage: f64,
     /// Working directory
@@ -100,20 +100,27 @@ pub struct RunArgs {
     #[clap(long, allow_hyphen_values=true, default_value="-F 4", help_heading="Scanning stage")]
     pub scan_filter_args: Option<String>,
     /// Threads for remapping against bin reference
-    #[clap(long, default_value = "2", help_heading="Remap stage")]
+    #[clap(long, default_value = "2", help_heading="Remapping stage")]
     pub remap_threads: usize,
     /// Parallel tasks for remapping against bin reference
-    #[clap(long, short = 'p', default_value = "4", help_heading="Remap stage")]
+    #[clap(long, short = 'p', default_value = "4", help_heading="Remapping stage")]
     pub remap_parallel: usize,
     /// Additional arguments for remap stage aligner
-    #[clap(long, allow_hyphen_values=true, help_heading="Remap stage")]
+    #[clap(long, allow_hyphen_values=true, help_heading="Remapping stage")]
     pub remap_args: Option<String>,
     /// Additional arguments for scanning stage alignment filter (samtools)
-    #[clap(long, allow_hyphen_values=true, default_value="-F 4", help_heading="Remap stage")]
+    #[clap(long, allow_hyphen_values=true, default_value="-F 4", help_heading="Remapping stage")]
     pub remap_filter_args: Option<String>,
     /// Remap all input reads instead of binned reads
-    #[clap(long, help_heading="Remap stage")]
+    #[clap(long, help_heading="Remapping stage")]
     pub remap_all: bool,
+    /// Exclude sequences from remapping according to their 'bin' (or equivalent annotation for scheme)
+    /// 
+    /// Can be used for example to exclude reads aligning to a host genome as a bait in the reference. 
+    /// Use '--include-scans' to include the excluded scanning alignments in the output table, by default 
+    /// these will not show due to not being taken into the remapping stage. 
+    #[clap(long, num_args(1..), help_heading="Remapping stage")]
+    pub remap_exclude_bins: Option<Vec<String>>,
     /// Do not create consensus genome from remapping stage
     #[clap(long, help_heading="Consensus stage")]
     pub no_consensus: bool,

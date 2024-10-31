@@ -52,6 +52,7 @@ fn main() -> Result<()> {
                 None,
                 args.remap_args.clone(),
                 args.remap_filter_args.clone(),
+                args.remap_exclude_bins.clone(),
                 args.include_scans
             )?;
 
