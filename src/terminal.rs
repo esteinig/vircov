@@ -1,7 +1,7 @@
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
-use crate::{alignment::{Aligner, Preset, SelectHighest}, annotation::AnnotationPreset};
+use crate::{alignment::{Aligner, Preset, SelectHighest}, annotation::AnnotationPreset, haplotype::Haplotyper};
 
 /// Vircov: metagenomic diagnostics for viral genomes
 #[derive(Debug, Parser)]
@@ -133,9 +133,12 @@ pub struct RunArgs {
     /// Minimum base quality to consider a site
     #[clap(long, default_value="20", help_heading="Consensus stage")]
     pub min_consensus_quality: usize,
-    /// Attempt haplotyping to recover strain consensus genomes
+    /// Attempt haplotyping to recover strains from mixed samples
     #[clap(long, help_heading="Haplotype stage")]
     pub haplotype: bool,
+    /// Haplotype calling pipelines available for strain haplotyping
+    #[clap(long, default_value="floria", help_heading="Haplotype stage")]
+    pub haplotyper: Haplotyper,
 }
 
 #[derive(Debug, Args)]

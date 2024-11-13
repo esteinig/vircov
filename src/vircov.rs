@@ -2,10 +2,9 @@ use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
-use crate::haplotype::{HaplotypeVariantCaller, VircovHaplotype};
+use crate::haplotype::{Haplotyper, VircovHaplotype};
 use crate::terminal::{CoverageArgs, RunArgs};
 use crate::utils::{get_file_component, FileComponent};
-use crate::vircov;
 
 use itertools::Itertools;
 use anyhow::Result;
@@ -76,7 +75,7 @@ impl Vircov {
         )?;
 
         log::info!("Reference genome selection by highest '{}'", select_by);
-        let selections = self.select(
+        let selections = self.select_bin_reference(
             &coverage_bins, 
             select_by,
             None
@@ -96,7 +95,7 @@ impl Vircov {
         
 
         log::info!("Starting bin remapping and consensus assembly ({})", self.config.alignment.aligner);
-        let (consensus, remap, depth) = self.remap(
+        let (consensus, remap, depth) = self.remap_bin_reference(
             &selections, 
             bin_read_files,
             remap_args,
@@ -106,6 +105,13 @@ impl Vircov {
             threads, 
             consensus, 
             haplotype,
+            keep
+        )?;
+
+        log::info!("Starting bin consensus assembly remapping ({})", self.config.alignment.aligner);
+        self.remap_bin_consensus(
+            &consensus,
+            threads,
             keep
         )?;
 
@@ -276,7 +282,7 @@ impl Vircov {
 
         Ok(result)
     }
-    pub fn select(
+    pub fn select_bin_reference(
         &self,
         coverage_bins: &Vec<CoverageBin>, // If grouped, these are grouped fields
         select_by: SelectHighest,
@@ -401,7 +407,7 @@ impl Vircov {
 
         Ok(selected_reference_coverage)
     }
-    pub fn remap(
+    pub fn remap_bin_reference(
         &self, 
         selections: &HashMap<String, Vec<Coverage>>, 
         bin_read_files: Option<HashMap<String, Vec<PathBuf>>>,
@@ -518,6 +524,7 @@ impl Vircov {
                                     &bam, 
                                     &remap_reference, 
                                     filter_reference.clone(),
+                                    self.config.haplotype.haplotyper.clone()  // set from run args
                                 )
                             )?;
                             vircov_haplotype.haplotype()?;
@@ -577,6 +584,17 @@ impl Vircov {
 
             Ok((consensus_data, remap_data, depth_data))
         })
+
+    }
+
+    pub fn remap_bin_consensus(
+        &self,
+        consensus: &Vec<ConsensusRecord>,
+        threads: usize,
+        keep: bool
+    ) -> Result<(), VircovError> {
+
+        Ok(())
 
     }
     fn extract_remap_sequences(
@@ -683,7 +701,7 @@ impl VircovConfig {
                 args.min_consensus_depth
             ),
             filter: FilterConfig::with_default(args.min_remap_coverage),
-            haplotype: HaplotypeConfig::default(),
+            haplotype: HaplotypeConfig::from_run_args(args.haplotyper.clone()),
             subtype: SubtypeConfig {}
         })
     }
@@ -941,7 +959,7 @@ impl FilterConfig {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HaplotypeConfig {
-    pub variant_caller: HaplotypeVariantCaller,
+    pub haplotyper: Haplotyper,
     pub alignment: PathBuf,
     pub fasta: PathBuf,
     pub reference: Option<String>,
@@ -959,11 +977,21 @@ impl HaplotypeConfig {
         alignment: &PathBuf,
         fasta: &PathBuf,
         reference: Option<String>,
+        haplotyper: Haplotyper,
     ) -> Self {
         Self {
             alignment: alignment.to_path_buf(),
             fasta: fasta.to_path_buf(),
             reference: reference.to_owned(),
+            haplotyper: haplotyper.clone(),
+            ..Default::default()
+        }
+    }
+    pub fn from_run_args(
+        haplotyper: Haplotyper
+    ) -> Self {
+        Self {
+            haplotyper,
             ..Default::default()
         }
     }
@@ -971,7 +999,7 @@ impl HaplotypeConfig {
 impl Default for HaplotypeConfig {
     fn default() -> Self {
         Self {
-            variant_caller: HaplotypeVariantCaller::Freebayes,
+            haplotyper: Haplotyper::Floria,
             alignment: PathBuf::from(""),
             fasta: PathBuf::from(""),
             reference: None,            // ivar segment reference subset
@@ -996,6 +1024,7 @@ pub struct ConsensusConfig {
     pub header: Option<String>,
     pub args: Option<String>,
     pub mpileup: Option<String>,
+    pub max_pileup_depth: usize,
     pub min_quality: usize,
     pub min_frequency: f64,
     pub min_depth: usize,
@@ -1041,6 +1070,7 @@ impl Default for ConsensusConfig {
             header: None,
             args: None,
             mpileup: None,
+            max_pileup_depth: 10000,
             min_quality: 20,
             min_frequency: 0.75,
             min_depth: 10, 

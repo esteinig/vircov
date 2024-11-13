@@ -15,7 +15,8 @@ pub struct ConsensusRecord {
     pub id: String,
     pub length: u64,
     pub missing: u64,
-    pub completeness: f64
+    pub completeness: f64,
+    pub fasta: PathBuf
 }
 
 impl std::fmt::Display for ConsensusAssembler {
@@ -78,8 +79,9 @@ impl VircovConsensus {
         };
 
         let cmd = format!(
-            "{} samtools mpileup -a -A -d 0 -Q 0 {} - | ivar consensus -p '{}' -q {} -t {} -m {} -n {} {} {}", // Do not use -aa as segmented genomes have multiple ref-segment headers (@SQ)
+            "{} samtools mpileup -a -A -d {} -Q 0 {} - | ivar consensus -p '{}' -q {} -t {} -m {} -n {} {} {}", // Do not use -aa as segmented genomes have multiple ref-segment headers (@SQ)
             samtools_ref,
+            self.config.max_pileup_depth,
             mpileup_args,
             self.config.output.display(),
             self.config.min_quality,
@@ -119,7 +121,8 @@ impl VircovConsensus {
                 id: rec_id,
                 length: rec_len,
                 missing: count,
-                completeness
+                completeness,
+                fasta: fasta.to_path_buf()
             })
         }
         Ok(consensus_records)
