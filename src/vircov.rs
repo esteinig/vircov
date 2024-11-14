@@ -538,7 +538,7 @@ impl Vircov {
                                     &bam.clone(), 
                                     &outdir.join(consensus_name), 
                                     filter_reference.clone(),
-                                    Some(format!("{} {}", ref_cov.reference, ref_cov.description)),
+                                    Some(format!("{} {}", ref_cov.reference, ref_cov.description.replace("'", ""))),
                                     self.config.consensus.min_quality,
                                     self.config.consensus.min_frequency,
                                     self.config.consensus.min_depth
