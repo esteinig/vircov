@@ -255,7 +255,9 @@ pub enum ToolsCommands {
     /// Process GISAID and Nextstrain files to attempt genotype extraction
     ProcessGisaid(ProcessGisaidArgs),
     /// Concatenate output tables
-    ConcatOutput(ConcatArgs)
+    ConcatOutput(ConcatArgs),
+    /// Filter output tables 
+    FilterOutput(FilterArgs)
 }   
 
 
@@ -307,6 +309,35 @@ pub struct ConcatArgs {
     /// Add the file stem to column 'id'
     #[clap(long, short = 'f')]
     pub file_id: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FilterArgs {
+    /// Vircov run output table
+    #[clap(long, short = 'i')]
+    pub input: PathBuf,
+    /// Filtered output file
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+    /// Filter by sample identifier (if concatenated)
+    #[clap(long, num_args(0..))]
+    pub id: Option<Vec<String>>,
+    /// Filter by bin name
+    #[clap(long, short = 'b')]
+    pub bin: Option<String>,
+    /// Filter by minimum consensus completeness percent
+    #[clap(long, short = 'm')]
+    pub min_completeness: Option<f64>,
+    /// Filter by minimum remap coverage
+    #[clap(long, short = 'c')]
+    pub min_remap_coverage: Option<f64>,
+    /// Filter by minimum remap coverage
+    #[clap(long, short = 'c')]
+    pub min_remap_depth_coverage: Option<f64>,
+    /// Filter by minimum scan alignments
+    #[clap(long, short = 'a')]
+    pub min_scan_alignments: Option<u64>,
+
 }
 
 #[derive(Debug, Args)]

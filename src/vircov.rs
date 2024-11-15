@@ -1486,6 +1486,58 @@ impl VircovSummary {
         Ok(())
 
     }
+    pub fn filter_table(
+        input: &PathBuf,
+        output: &PathBuf,
+        id_filter: Option<Vec<String>>,
+        min_completeness: Option<f64>,
+        remap_coverage: Option<f64>,
+        remap_depth_coverage: Option<f64>,
+        scan_alignments: Option<u64>,
+        bin_filter: Option<String>,
+    ) -> Result<VircovSummary, VircovError> {
+
+        // Read records from the input TSV file
+        let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(true).from_path(input)?;
+        let mut filtered_records = Vec::new();
+
+        for rec in reader.deserialize() {
+            let record: VircovRecord = rec?;
+
+            // Apply each filter condition
+            let id_match = id_filter.as_ref().map_or(true, |ids| {
+                record.id.as_ref().map_or(false, |rec_id| ids.contains(rec_id))
+            });
+            let completeness_match = min_completeness.map_or(true, |min| {
+                record.consensus_completeness.map_or(false, |comp| comp >= min)
+            });
+            let coverage_match = remap_coverage.map_or(true, |min_cov| {
+                record.remap_coverage.map_or(false, |cov| cov >= min_cov)
+            });
+            let coverage_depth_match = remap_depth_coverage.map_or(true, |min_cov| {
+                record.remap_depth_coverage.map_or(false, |cov| cov >= min_cov)
+            });
+            let alignments_match = scan_alignments.map_or(true, |min_align| {
+                record.scan_alignments >= min_align
+            });
+            let bin_match = bin_filter.as_ref().map_or(true, |bin| {
+                record.bin.as_ref().map_or(false, |rec_bin| rec_bin == bin)
+            });
+
+            // Only include records that meet all criteria
+            if id_match && completeness_match && coverage_match && alignments_match && bin_match && coverage_depth_match {
+                filtered_records.push(record);
+            }
+        }
+
+        let summary = VircovSummary {
+            records: filtered_records,
+        };
+
+        VircovSummary::write_tsv(&summary, output, true)?;
+
+        Ok(summary)
+    }
     pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: Option<f64>, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
 
         let mut records = Vec::new();
@@ -1554,7 +1606,7 @@ impl VircovSummary {
         );
 
         eprintln!("{}", table);
-}
+    }
 }
 
 

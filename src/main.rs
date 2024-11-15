@@ -173,6 +173,9 @@ fn main() -> Result<()> {
                 ToolsCommands::ConcatOutput(args) => {
                     VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id, args.file_dir)?;
                 },
+                ToolsCommands::FilterOutput(args) => {
+                    VircovSummary::filter_table(&args.input, &args.output, args.id.clone(), args.min_completeness, args.min_remap_coverage, args.min_remap_depth_coverage, args.min_scan_alignments, args.bin.clone())?;
+                },
                 ToolsCommands::AnnotateDatabase(args) => {
 
                     let dba = DatabaseAnnotation::new(
