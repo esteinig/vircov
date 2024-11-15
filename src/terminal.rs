@@ -123,19 +123,22 @@ pub struct RunArgs {
     pub remap_exclude_bins: Option<Vec<String>>,
     /// Do not create consensus genome from remapping stage
     #[clap(long, help_heading="Consensus stage")]
-    pub no_consensus: bool,
+    pub consensus_disabled: bool,
+    /// Maximum depth fo 'mpileup' to take into consensus assembly
+    #[clap(long, default_value="10000", help_heading="Consensus stage")]
+    pub consensus_max_depth: usize,
     /// Minimum consensus assembly read depth to call a site
     #[clap(long, default_value="3", help_heading="Consensus stage")]
-    pub min_consensus_depth: usize,
+    pub consensus_min_depth: usize,
     /// Minimum consensus frequency to call a variant site
     #[clap(long, default_value="0.75", help_heading="Consensus stage")]
-    pub min_consensus_frequency: f64,
+    pub consensus_min_frequency: f64,
     /// Minimum base quality to consider a site
     #[clap(long, default_value="20", help_heading="Consensus stage")]
-    pub min_consensus_quality: usize,
+    pub consensus_min_quality: usize,
     /// Minimum consensus completeness to take consensus into remapping
     #[clap(long, default_value="60.0", help_heading="Consensus stage")]
-    pub min_consensus_completeness: f64,
+    pub consensus_min_completeness: f64,
     /// Attempt haplotyping to recover strains from mixed samples
     #[clap(long, help_heading="Haplotype stage")]
     pub haplotype: bool,
@@ -330,12 +333,15 @@ pub struct FilterArgs {
     pub bin: Option<String>,
     /// Filter by minimum consensus completeness percent
     #[clap(long, short = 'm')]
-    pub min_completeness: Option<f64>,
+    pub min_consensus_completeness: Option<f64>,
+    /// Filter by minimum consensus coverage percent (unique with MAPQ) 
+    #[clap(long, short = 'n')]
+    pub min_consensus_coverage_mapq: Option<f64>,
     /// Filter by minimum remap coverage
     #[clap(long, short = 'c')]
     pub min_remap_coverage: Option<f64>,
     /// Filter by minimum remap coverage
-    #[clap(long, short = 'c')]
+    #[clap(long, short = 'd')]
     pub min_remap_depth_coverage: Option<f64>,
     /// Filter by minimum scan alignments
     #[clap(long, short = 'a')]

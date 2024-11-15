@@ -542,7 +542,8 @@ impl Vircov {
                                     Some(format!("{} {}", ref_cov.reference, ref_cov.description.replace("'", ""))),
                                     self.config.consensus.min_quality,
                                     self.config.consensus.min_frequency,
-                                    self.config.consensus.min_depth
+                                    self.config.consensus.min_depth,
+                                    self.config.consensus.max_depth
                                 )
                             )?;
 
@@ -772,11 +773,12 @@ impl VircovConfig {
                 args.annotation_preset.clone()
             ),
             consensus: ConsensusConfig::with_default_from_args(
-                args.min_consensus_depth,
-                args.min_consensus_frequency,
-                args.min_consensus_depth
+                args.consensus_max_depth,
+                args.consensus_min_quality,
+                args.consensus_min_frequency,
+                args.consensus_min_depth,
             ),
-            filter: FilterConfig::with_default(args.min_remap_coverage, args.min_consensus_completeness),
+            filter: FilterConfig::with_default(args.min_remap_coverage, args.consensus_min_completeness),
             haplotype: HaplotypeConfig::from_run_args(args.haplotyper.clone()),
             subtype: SubtypeConfig {}
         })
@@ -1104,7 +1106,7 @@ pub struct ConsensusConfig {
     pub header: Option<String>,
     pub args: Option<String>,
     pub mpileup: Option<String>,
-    pub max_pileup_depth: usize,
+    pub max_depth: usize,
     pub min_quality: usize,
     pub min_frequency: f64,
     pub min_depth: usize,
@@ -1118,7 +1120,8 @@ impl ConsensusConfig {
         header: Option<String>, 
         min_quality: usize, 
         min_frequency: f64, 
-        min_depth: usize
+        min_depth: usize,
+        max_depth: usize
     ) -> Self {
         Self {
             alignment: alignment.clone(),
@@ -1128,14 +1131,16 @@ impl ConsensusConfig {
             min_quality,
             min_frequency,
             min_depth,
+            max_depth,
             ..Default::default()
         }
     }
-    pub fn with_default_from_args(min_quality: usize, min_frequency: f64, min_depth: usize) -> Self {
+    pub fn with_default_from_args(max_depth: usize, min_quality: usize, min_frequency: f64, min_depth: usize) -> Self {
         Self {
             min_quality,
             min_frequency,
             min_depth,
+            max_depth,
             ..Default::default()
         }
     }
@@ -1150,7 +1155,7 @@ impl Default for ConsensusConfig {
             header: None,
             args: None,
             mpileup: None,
-            max_pileup_depth: 10000,
+            max_depth: 10000,
             min_quality: 20,
             min_frequency: 0.75,
             min_depth: 10, 
@@ -1268,11 +1273,11 @@ pub struct VircovRecord {
     pub consensus_completeness: Option<f64>,
     #[tabled(skip)]
     #[tabled(rename="Consensus Alignments")]
-    pub consensus_mapq_alignments: Option<u64>,
+    pub consensus_alignments_mapq: Option<u64>,
     #[tabled(skip)]
     #[tabled(rename="Consensus Coverage")]
     #[tabled(display_with = "display_option_u64")]
-    pub consensus_mapq_coverage: Option<f64>,
+    pub consensus_coverage_mapq: Option<f64>,
     #[tabled(skip)]
     pub reference_description: String,
 }
@@ -1318,7 +1323,7 @@ impl VircovRecord {
             None => (None, None)
         };
 
-        let (consensus_mapq_alignments, consensus_mapq_coverage) = match consensus_remap_record  {
+        let (consensus_alignments_mapq, consensus_coverage_mapq) = match consensus_remap_record  {
             Some(record) => (Some(record.alignments), Some(record.coverage*100.0)),
             None => (None, None)
         };
@@ -1352,8 +1357,8 @@ impl VircovRecord {
             consensus_length,
             consensus_missing,
             consensus_completeness,
-            consensus_mapq_alignments,
-            consensus_mapq_coverage: consensus_mapq_coverage,
+            consensus_alignments_mapq,
+            consensus_coverage_mapq: consensus_coverage_mapq,
             bin: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
@@ -1387,8 +1392,8 @@ impl VircovRecord {
             consensus_length: None,
             consensus_missing: None,
             consensus_completeness: None,
-            consensus_mapq_alignments: None,
-            consensus_mapq_coverage: None,
+            consensus_alignments_mapq: None,
+            consensus_coverage_mapq: None,
             bin: None,
             name: None,
             segment: None,
@@ -1601,7 +1606,8 @@ impl VircovSummary {
         input: &PathBuf,
         output: &PathBuf,
         id_filter: Option<Vec<String>>,
-        min_completeness: Option<f64>,
+        consensus_completeness: Option<f64>,
+        consensus_coverage_mapq: Option<f64>,
         remap_coverage: Option<f64>,
         remap_depth_coverage: Option<f64>,
         scan_alignments: Option<u64>,
@@ -1609,22 +1615,25 @@ impl VircovSummary {
     ) -> Result<VircovSummary, VircovError> {
 
         // Read records from the input TSV file
-        let mut reader = csv::ReaderBuilder::new().delimiter(b'\t').has_headers(true).from_path(input)?;
+        let summary = VircovSummary::from_tsv(input, true)?;
         let mut filtered_records = Vec::new();
 
-        for rec in reader.deserialize() {
-            let record: VircovRecord = rec?;
+        for record in summary.records {
 
             // Apply each filter condition
             let id_match = id_filter.as_ref().map_or(true, |ids| {
                 record.id.as_ref().map_or(false, |rec_id| ids.contains(rec_id))
             });
-            let completeness_match = min_completeness.map_or(true, |min| {
+            let completeness_match = consensus_completeness.map_or(true, |min| {
                 record.consensus_completeness.map_or(false, |comp| comp >= min)
             });
             let coverage_match = remap_coverage.map_or(true, |min_cov| {
                 record.remap_coverage.map_or(false, |cov| cov >= min_cov)
             });
+            let consensus_coverage_mapq_match = consensus_coverage_mapq.map_or(true, |min_cov| {
+                record.consensus_coverage_mapq.map_or(false, |cov| cov >= min_cov)
+            });
+
             let coverage_depth_match = remap_depth_coverage.map_or(true, |min_cov| {
                 record.remap_depth_coverage.map_or(false, |cov| cov >= min_cov)
             });
@@ -1636,7 +1645,7 @@ impl VircovSummary {
             });
 
             // Only include records that meet all criteria
-            if id_match && completeness_match && coverage_match && alignments_match && bin_match && coverage_depth_match {
+            if id_match && completeness_match && coverage_match && alignments_match && bin_match && coverage_depth_match && consensus_coverage_mapq_match {
                 filtered_records.push(record);
             }
         }

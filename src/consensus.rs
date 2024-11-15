@@ -81,7 +81,7 @@ impl VircovConsensus {
         let cmd = format!(
             "{} samtools mpileup -a -A -d {} -Q 0 {} - | ivar consensus -p '{}' -q {} -t {} -m {} -n {} {} {}", // Do not use -aa as segmented genomes have multiple ref-segment headers (@SQ)
             samtools_ref,
-            self.config.max_pileup_depth,
+            self.config.max_depth,
             mpileup_args,
             self.config.output.display(),
             self.config.min_quality,

@@ -160,6 +160,7 @@ impl VircovHaplotype {
                 self.config.min_consensus_quality, 
                 self.config.min_consensus_freq,
                 self.config.min_consensus_depth, 
+                1000000
             );
 
             let consensus = VircovConsensus::new(strain_config)?;

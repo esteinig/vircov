@@ -43,7 +43,7 @@ fn main() -> Result<()> {
                 &args.output, 
                 args.remap_parallel, 
                 args.remap_threads, 
-                !args.no_consensus, 
+                !args.consensus_disabled, 
                 args.haplotype,
                 args.keep, 
                 args.table,
@@ -174,7 +174,17 @@ fn main() -> Result<()> {
                     VircovSummary::concatenate(&args.input, &args.output, args.min_completeness, args.file_id, args.file_dir)?;
                 },
                 ToolsCommands::FilterOutput(args) => {
-                    VircovSummary::filter_table(&args.input, &args.output, args.id.clone(), args.min_completeness, args.min_remap_coverage, args.min_remap_depth_coverage, args.min_scan_alignments, args.bin.clone())?;
+                    VircovSummary::filter_table(
+                        &args.input, 
+                        &args.output, 
+                        args.id.clone(), 
+                        args.min_consensus_completeness, 
+                        args.min_consensus_coverage_mapq,
+                        args.min_remap_coverage, 
+                        args.min_remap_depth_coverage, 
+                        args.min_scan_alignments, 
+                        args.bin.clone()
+                    )?;
                 },
                 ToolsCommands::AnnotateDatabase(args) => {
 
