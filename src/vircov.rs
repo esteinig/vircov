@@ -42,7 +42,7 @@ impl Vircov {
         &self, 
         tsv: &PathBuf,
         parallel: usize, 
-        threads: usize, 
+        remap_threads: usize, 
         consensus: bool, 
         haplotype: bool,
         keep: bool,
@@ -89,18 +89,14 @@ impl Vircov {
             remap_filter_args,
             &self.config.outdir.clone(), 
             parallel, 
-            threads, 
+            remap_threads, 
             consensus, 
             haplotype,
             keep
         )?;
 
         log::info!("Starting bin consensus assembly remapping ({})", self.config.alignment.aligner);
-        let consensus_remap = self.remap_bin_consensus(
-            &consensus,
-            threads,
-        )?;
-
+        let consensus_remap = self.remap_bin_consensus(&consensus)?;
         
         let scan = if include_scans {
             coverage
@@ -594,8 +590,7 @@ impl Vircov {
 
     pub fn remap_bin_consensus(
         &self,
-        consensus: &Vec<ConsensusRecord>,
-        threads: usize
+        consensus: &Vec<ConsensusRecord>
     ) -> Result<Vec<ReferenceCoverage>, VircovError> {
 
         log::info!("Remapping input reads against detected consensus sequences");
@@ -621,7 +616,7 @@ impl Vircov {
                 Some(self.config.alignment.input.clone()),
                 Some(bam.clone()), 
                 false,
-                threads
+                self.config.alignment.threads
             ),
             &self.config.reference.remap_config(
                 &consensus_db
