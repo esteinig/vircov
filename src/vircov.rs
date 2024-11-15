@@ -620,7 +620,7 @@ impl Vircov {
                 Some("-F 4".to_string()),
                 Some(self.config.alignment.input.clone()),
                 Some(bam.clone()), 
-                true,
+                false,
                 threads
             ),
             &self.config.reference.remap_config(
