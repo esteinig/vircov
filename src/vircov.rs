@@ -437,9 +437,29 @@ impl Vircov {
                     
                     let remap_id = bin;
 
-                    let bin_read_files = match &bin_read_files {
-                        Some(bin_read_map) => bin_read_map.get(remap_id),
-                        None => None
+                    let bin_read_files = if self.config.alignment.remap_bin_reads {
+                        // Recreate the coverage bin here for read set access
+                        let coverage_bin = CoverageBin::from_coverage(
+                            bin, 
+                            coverage.iter().collect()
+                        )?;
+
+                        log::info!("Extracting reads for remapping of bin: {}", coverage_bin.sanitized_id());
+                        
+                        let output = self.config.alignment.get_output_read_paths(
+                            &coverage_bin.sanitized_id(), 
+                            "fastq", 
+                            outdir
+                        )?;
+        
+                        coverage_bin.write_group_reads(
+                            self.config.alignment.input.clone(), 
+                            output.clone()
+                        )?;
+                        Some(output)
+                    } else {
+                        log::info!("All input reads will be used for remapping");
+                        None
                     };
 
                     log::info!("Reference bin '{}' remapping (n = {})", bin, coverage.len());
@@ -460,7 +480,7 @@ impl Vircov {
                             None, // uses remap reference
                             remap_args.clone(),
                             remap_filter_args.clone(),
-                            bin_read_files.cloned(),
+                            bin_read_files.clone(),
                             Some(bam.clone()), 
                             threads
                         ),

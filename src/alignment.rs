@@ -208,10 +208,10 @@ impl std::fmt::Display for CoverageBin {
 }
 
 impl CoverageBin {
-    pub fn from_coverage(group: &str, coverage: Vec<&Coverage>) -> Result<Self, VircovError> {
+    pub fn from_coverage(bin: &str, coverage: Vec<&Coverage>) -> Result<Self, VircovError> {
 
         let mut grouped_coverage = Self {
-            id: group.to_string(),
+            id: bin.to_string(),
             count: coverage.len(),
             total_regions: 0,
             total_reads: 0,
