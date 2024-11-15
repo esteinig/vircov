@@ -96,7 +96,7 @@ impl Vircov {
         )?;
 
         log::info!("Starting bin consensus assembly remapping ({})", self.config.alignment.aligner);
-        self.remap_bin_consensus(
+        let consensus_remap = self.remap_bin_consensus(
             &consensus,
             threads,
         )?;
@@ -108,7 +108,7 @@ impl Vircov {
             selections.values().flatten().cloned().collect()
         };
 
-        let summary = self.summary(consensus, scan, remap, depth)?;
+        let summary = self.summary(scan, remap, consensus, consensus_remap, depth)?;
 
         log::info!("Writing output table to: {}", tsv.display());
         if table { summary.print_table(true); }
@@ -596,7 +596,7 @@ impl Vircov {
         &self,
         consensus: &Vec<ConsensusRecord>,
         threads: usize
-    ) -> Result<(), VircovError> {
+    ) -> Result<Vec<ReferenceCoverage>, VircovError> {
 
         log::info!("Remapping input reads against detected consensus sequences");
 
@@ -632,14 +632,9 @@ impl Vircov {
         let coverage: Vec<ReferenceCoverage> = remap_aligner
             .run_aligner()?
             .unwrap()
-            .coverage(true, true)?;
-
-
-        for data in coverage {
-            log::info!("Consensus reference {} ({}) has {} aligned reads and {} coverage", data.reference, data.bin.unwrap_or(String::from("no_bin")), data.alignments, data.coverage)
-        }
+            .coverage(true, false)?;
         
-        Ok(())
+        Ok(coverage)
 
     }
     fn extract_remap_sequences(
@@ -668,9 +663,10 @@ impl Vircov {
     }
     pub fn summary(
         &self, 
-        consensus: Vec<ConsensusRecord>, 
         scan: Vec<ReferenceCoverage>, 
         remap: Vec<ReferenceCoverage>,
+        consensus: Vec<ConsensusRecord>, 
+        consensus_remap: Vec<ReferenceCoverage>,
         depth: Vec<DepthCoverageRecord>
     ) -> Result<VircovSummary, VircovError> {
 
@@ -693,47 +689,51 @@ impl Vircov {
             )).collect(),
             depth,
             consensus,
+        consensus_remap
+            .iter()
+            .map(|cov| AlignmentRecord::from(cov.clone(), false, None))
+            .collect(),
             &&self.config.reference.annotation
         )
     }
 }
 
-fn identify_unique_reads(coverages: &Vec<ReferenceCoverage>) -> Vec<(String, Option<String>, usize, usize)> {
-    use std::collections::{HashMap, HashSet};
+// fn identify_unique_reads(coverages: &Vec<ReferenceCoverage>) -> Vec<(String, Option<String>, usize, usize)> {
+//     use std::collections::{HashMap, HashSet};
 
-    // Step 1: Count occurrences of each read ID across all references
-    let mut read_counts: HashMap<String, usize> = HashMap::new();
-    for coverage in coverages.iter() {
-        for read_id in &coverage.read_id {
-            *read_counts.entry(read_id.clone()).or_insert(0) += 1;
-        }
-    }
+//     // Step 1: Count occurrences of each read ID across all references
+//     let mut read_counts: HashMap<String, usize> = HashMap::new();
+//     for coverage in coverages.iter() {
+//         for read_id in &coverage.read_id {
+//             *read_counts.entry(read_id.clone()).or_insert(0) += 1;
+//         }
+//     }
 
-    // Step 2: Identify reads that appear only once across all references
-    let unique_reads: HashSet<String> = read_counts
-        .into_iter()
-        .filter(|&(_, count)| count == 1)
-        .map(|(read_id, _)| read_id)
-        .collect();
+//     // Step 2: Identify reads that appear only once across all references
+//     let unique_reads: HashSet<String> = read_counts
+//         .into_iter()
+//         .filter(|&(_, count)| count == 1)
+//         .map(|(read_id, _)| read_id)
+//         .collect();
 
-    // Step 3: Create new ReferenceCoverage structs with unique reads
-    let filtered_coverages: Vec<(String, Option<String>, usize, usize)> = coverages
-        .iter()
-        .map(|coverage| {
-            // Retain only read IDs that are unique to this reference
-            let filtered_read_ids: Vec<String> = coverage
-                .read_id
-                .iter()
-                .filter(|read_id| unique_reads.contains(*read_id))
-                .cloned()
-                .collect();
+//     // Step 3: Create new ReferenceCoverage structs with unique reads
+//     let filtered_coverages: Vec<(String, Option<String>, usize, usize)> = coverages
+//         .iter()
+//         .map(|coverage| {
+//             // Retain only read IDs that are unique to this reference
+//             let filtered_read_ids: Vec<String> = coverage
+//                 .read_id
+//                 .iter()
+//                 .filter(|read_id| unique_reads.contains(*read_id))
+//                 .cloned()
+//                 .collect();
 
-            (coverage.reference.clone(), coverage.bin.clone(), coverage.read_id.len(), filtered_read_ids.len())
-        })
-        .collect();
+//             (coverage.reference.clone(), coverage.bin.clone(), coverage.read_id.len(), filtered_read_ids.len())
+//         })
+//         .collect();
 
-    filtered_coverages
-}
+//     filtered_coverages
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VircovConfig {
@@ -882,6 +882,8 @@ impl AlignmentConfig {
         config.threads = threads;
         config.output = output;
         config.filter_args = filter_args;
+
+        config.secondary = secondary;
 
         config
     }
@@ -1270,6 +1272,13 @@ pub struct VircovRecord {
     #[tabled(display_with = "display_option_f64")]
     pub consensus_completeness: Option<f64>,
     #[tabled(skip)]
+    #[tabled(rename="Consensus Alignments")]
+    pub consensus_mapq_alignments: Option<u64>,
+    #[tabled(skip)]
+    #[tabled(rename="Consensus Coverage")]
+    #[tabled(display_with = "display_option_u64")]
+    pub consensus_mapq_coverage: Option<f64>,
+    #[tabled(skip)]
     pub reference_description: String,
 }
 impl VircovRecord {
@@ -1281,6 +1290,7 @@ impl VircovRecord {
         scan_record: AlignmentRecord, 
         remap_record: Option<AlignmentRecord>, 
         remap_depth_record: Option<DepthCoverageRecord>,
+        consensus_remap_record: Option<AlignmentRecord>,
         consensus_record: Option<ConsensusRecord>, 
     ) -> Result<Self, VircovError> {
         
@@ -1313,6 +1323,11 @@ impl VircovRecord {
             None => (None, None)
         };
 
+        let (consensus_mapq_alignments, consensus_mapq_coverage) = match consensus_remap_record  {
+            Some(record) => (Some(record.alignments), Some(record.coverage*100.0)),
+            None => (None, None)
+        };
+
 
         Ok(Self {
             id: None,
@@ -1342,6 +1357,8 @@ impl VircovRecord {
             consensus_length,
             consensus_missing,
             consensus_completeness,
+            consensus_mapq_alignments,
+            consensus_mapq_coverage: consensus_mapq_coverage,
             bin: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
@@ -1375,6 +1392,8 @@ impl VircovRecord {
             consensus_length: None,
             consensus_missing: None,
             consensus_completeness: None,
+            consensus_mapq_alignments: None,
+            consensus_mapq_coverage: None,
             bin: None,
             name: None,
             segment: None,
@@ -1450,6 +1469,7 @@ impl VircovSummary {
         remap_records: Vec<AlignmentRecord>, 
         depth_records: Vec<DepthCoverageRecord>,
         consensus_records: Vec<ConsensusRecord>, 
+        consensus_remap_records: Vec<AlignmentRecord>,
         annotation_options: &AnnotationConfig,
     )-> Result<Self, VircovError> {
 
@@ -1472,6 +1492,7 @@ impl VircovSummary {
                 };
                 scan_id == remap_id
             }).collect();
+
 
             let matched_records = match matching_records.len() {
                 0 => MatchedRecords { scan: scan_record, remap: None },
@@ -1518,6 +1539,15 @@ impl VircovSummary {
                 }
             };
 
+            let consensus_remap_record = consensus_remap_records.iter().find(|remap| {
+                let mut remap_id = remap.reference.clone();
+                let mut scan_id = matched_records.scan.reference.clone();
+                if let Some(segment) = annotation.segment.clone() {
+                    scan_id.push_str(&segment);
+                    remap_id.push_str(&segment);
+                }
+                scan_id == remap_id
+            });
 
             // Find the corresponding depth coverage record
             let depth_record = depth_records.iter().find(|depth_record| {
@@ -1528,6 +1558,8 @@ impl VircovSummary {
                 scan_id == depth_record.id
             });
 
+            
+
             summary_records.push(
                 VircovRecord::from(
                     index.clone(),
@@ -1537,6 +1569,7 @@ impl VircovSummary {
                     matched_records.scan, 
                     matched_records.remap,
                     depth_record.cloned(),
+                    consensus_remap_record.cloned(),
                     consensus_record,
                 )?
             )
