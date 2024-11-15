@@ -599,7 +599,7 @@ impl Vircov {
     ) -> Result<(), VircovError> {
 
         log::info!("Remapping input reads against detected consensus sequences");
-        
+
         // Remap input reads against the consensus sequences of detected viruses
         let fasta: Vec<PathBuf> = consensus
             .into_iter()
@@ -626,7 +626,7 @@ impl Vircov {
             &self.config.reference.remap_config(
                 &consensus_db
             ),
-            &self.config.filter,
+            &FilterConfig::with_default_mapq(self.config.filter.min_consensus_completeness),
         );
 
         let coverage: Vec<ReferenceCoverage> = remap_aligner
@@ -1026,21 +1026,18 @@ impl FilterConfig {
         min_consensus_completeness: f64
     ) -> Self {
         Self {
-            min_query_length: 0,
-            min_query_coverage: 0.0,
-            min_mapq: 0,
-            min_scan_alignments: 0,
-            min_scan_regions: 0,
-            min_scan_coverage: 0.,
-            min_scan_reads: 0,
-            min_scan_reference_length: 0,
-            min_scan_regions_coverage: None,
-            min_grouped_regions: 0,
-            min_grouped_mean_coverage: 0.0,
-            min_grouped_alignments: 0,
-            min_grouped_reads: 0,
             min_remap_coverage,
-            min_consensus_completeness
+            min_consensus_completeness,
+            ..Default::default()
+        }
+    }
+    pub fn with_default_mapq(
+        min_consensus_completeness: f64
+    ) -> Self {
+        Self {
+            min_mapq: 60,
+            min_consensus_completeness,
+            ..Default::default()
         }
     }
 }
