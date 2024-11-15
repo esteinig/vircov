@@ -1,5 +1,4 @@
 use crate::error::VircovError;
-use crate::vircov::Vircov;
 use anyhow::Result;
 use csv::{Reader, ReaderBuilder, Writer, WriterBuilder};
 use env_logger::{fmt::Color, Builder};

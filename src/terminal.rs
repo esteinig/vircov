@@ -133,6 +133,9 @@ pub struct RunArgs {
     /// Minimum base quality to consider a site
     #[clap(long, default_value="20", help_heading="Consensus stage")]
     pub min_consensus_quality: usize,
+    /// Minimum consensus completeness to take consensus into remapping
+    #[clap(long, default_value="60.0", help_heading="Consensus stage")]
+    pub min_consensus_completeness: f64,
     /// Attempt haplotyping to recover strains from mixed samples
     #[clap(long, help_heading="Haplotype stage")]
     pub haplotype: bool,

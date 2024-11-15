@@ -1,8 +1,9 @@
-use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, Coverage, CoverageBin, DepthCoverageRecord, Preset, ReadAlignment, SelectHighest, VircovAligner};
+use crate::alignment::{parse_reference_fasta, Aligner, AlignmentFormat, ReferenceCoverage, CoverageBin, DepthCoverageRecord, Preset, ReadAlignment, SelectHighest, VircovAligner};
 use crate::annotation::{Annotation, AnnotationConfig, AnnotationPreset};
 use crate::consensus::{ConsensusAssembler, ConsensusRecord, VircovConsensus};
 use crate::error::VircovError;
 use crate::haplotype::{Haplotyper, VircovHaplotype};
+use crate::subtype::concatenate_fasta_files;
 use crate::terminal::{CoverageArgs, RunArgs};
 use crate::utils::{get_file_component, FileComponent};
 
@@ -16,7 +17,7 @@ use tabled::settings::object::Columns;
 use tabled::settings::{Style, Width};
 use tabled::{Table, Tabled};
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{create_dir_all, remove_dir_all, remove_file};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader};
@@ -80,24 +81,10 @@ impl Vircov {
             select_by,
             None
         )?;
-
-        let bin_read_files = if self.config.alignment.remap_bin_reads {
-            log::info!("Extracting binned reads to working directory for remapping");
-            Some(self.extract_bin_reads(
-                &coverage_bins,
-                &self.config.outdir.clone(),
-                self.config.alignment.threads, // scanning threads for group read extraction
-            )?)
-        } else {
-            log::info!("All input reads will be used for remapping");
-            None
-        };
-        
-
+    
         log::info!("Starting bin remapping and consensus assembly ({})", self.config.alignment.aligner);
         let (consensus, remap, depth) = self.remap_bin_reference(
             &selections, 
-            bin_read_files,
             remap_args,
             remap_filter_args,
             &self.config.outdir.clone(), 
@@ -112,7 +99,6 @@ impl Vircov {
         self.remap_bin_consensus(
             &consensus,
             threads,
-            keep
         )?;
 
         
@@ -197,11 +183,11 @@ impl Vircov {
     }
     pub fn bin_alignments(
         &self,
-        coverage: &[Coverage],
+        coverage: &[ReferenceCoverage],
         exclude_bins: Option<Vec<String>>
     ) -> Result<Vec<CoverageBin>, VircovError> {
 
-        let mut coverage_bins: BTreeMap<String, Vec<&Coverage>> = BTreeMap::new();
+        let mut coverage_bins: BTreeMap<String, Vec<&ReferenceCoverage>> = BTreeMap::new();
 
         for cov in coverage {
             if let Some(bin) = &cov.bin {
@@ -287,7 +273,7 @@ impl Vircov {
         coverage_bins: &Vec<CoverageBin>, // If grouped, these are grouped fields
         select_by: SelectHighest,
         outdir: Option<PathBuf>,
-    ) -> Result<HashMap<String, Vec<Coverage>> , VircovError> {
+    ) -> Result<HashMap<String, Vec<ReferenceCoverage>> , VircovError> {
         
         let refs = self.references
             .as_ref()
@@ -297,10 +283,10 @@ impl Vircov {
             std::fs::create_dir_all(path)?;
         }
 
-        let mut selected_reference_coverage: HashMap<String, Vec<Coverage>> = HashMap::new();
+        let mut selected_reference_coverage: HashMap<String, Vec<ReferenceCoverage>> = HashMap::new();
 
         for coverage_bin in coverage_bins {
-            let mut grouped_segments: BTreeMap<String, Vec<Coverage>> = BTreeMap::new();
+            let mut grouped_segments: BTreeMap<String, Vec<ReferenceCoverage>> = BTreeMap::new();
 
             for cov in &coverage_bin.coverage {
 
@@ -325,7 +311,7 @@ impl Vircov {
 
             if segmented {
 
-                let mut selected_segments: BTreeMap<String, Coverage> = BTreeMap::new();
+                let mut selected_segments: BTreeMap<String, ReferenceCoverage> = BTreeMap::new();
 
                 for (segment, cov_fields) in grouped_segments {
                     let selected = match select_by {
@@ -409,8 +395,7 @@ impl Vircov {
     }
     pub fn remap_bin_reference(
         &self, 
-        selections: &HashMap<String, Vec<Coverage>>, 
-        bin_read_files: Option<HashMap<String, Vec<PathBuf>>>,
+        selections: &HashMap<String, Vec<ReferenceCoverage>>, 
         remap_args: Option<String>,
         remap_filter_args: Option<String>,
         outdir: &PathBuf,
@@ -419,7 +404,7 @@ impl Vircov {
         consensus: bool,
         haplotype: bool,
         keep: bool
-    ) -> Result<(Vec<ConsensusRecord>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
+    ) -> Result<(Vec<ConsensusRecord>, Vec<ReferenceCoverage>, Vec<DepthCoverageRecord>), VircovError> {
 
         let refs = self.references
             .as_ref()
@@ -429,11 +414,11 @@ impl Vircov {
             .num_threads(parallel)
             .build()
             .expect("Failed to create thread pool")
-            .install(|| -> Result<(Vec<ConsensusRecord>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
+            .install(|| -> Result<(Vec<ConsensusRecord>, Vec<ReferenceCoverage>, Vec<DepthCoverageRecord>), VircovError> {
 
-            let results: Vec<Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError>> = selections
+            let results: Vec<Result<(Vec<Vec<ConsensusRecord>>, Vec<ReferenceCoverage>, Vec<DepthCoverageRecord>), VircovError>> = selections
                 .into_par_iter()
-                .map(|(bin, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<Coverage>, Vec<DepthCoverageRecord>), VircovError> {
+                .map(|(bin, coverage)| -> Result<(Vec<Vec<ConsensusRecord>>, Vec<ReferenceCoverage>, Vec<DepthCoverageRecord>), VircovError> {
                     
                     let remap_id = bin;
 
@@ -482,6 +467,7 @@ impl Vircov {
                             remap_filter_args.clone(),
                             bin_read_files.clone(),
                             Some(bam.clone()), 
+                            false,
                             threads
                         ),
                         &self.config.reference.remap_config(
@@ -490,7 +476,7 @@ impl Vircov {
                         &self.config.filter,
                     );
 
-                    let remap_coverage: Vec<Coverage> = remap_aligner
+                    let remap_coverage: Vec<ReferenceCoverage> = remap_aligner
                         .run_aligner()?
                         .unwrap()
                         .coverage(true, false)?;
@@ -507,7 +493,6 @@ impl Vircov {
 
                     for ref_cov in &remap_coverage {
 
-                                       
                         // Reference output must have extension '.fa' matching auto-extension from iVar
                         let (filter_reference, consensus_name, seg_name) = match &ref_cov.segment {
                             Some(segment) => {
@@ -610,17 +595,58 @@ impl Vircov {
     pub fn remap_bin_consensus(
         &self,
         consensus: &Vec<ConsensusRecord>,
-        threads: usize,
-        keep: bool
+        threads: usize
     ) -> Result<(), VircovError> {
 
+        log::info!("Remapping input reads against detected consensus sequences");
+        
+        // Remap input reads against the consensus sequences of detected viruses
+        let fasta: Vec<PathBuf> = consensus
+            .into_iter()
+            .filter(|r| r.completeness >= self.config.filter.min_consensus_completeness)
+            .map(|r| r.fasta.to_path_buf())
+            .collect();
+
+        let consensus_db = self.config.outdir.join("consensus.fasta");
+        concatenate_fasta_files(&fasta, &consensus_db)?;
+
+        let bam = self.config.outdir.join("consensus.bam");
+
+        let remap_aligner = VircovAligner::from(
+            &self.config.outdir,
+            &self.config.alignment.remap_config(
+                None, // uses consensus_db reference
+                None,
+                Some("-F 4".to_string()),
+                Some(self.config.alignment.input.clone()),
+                Some(bam.clone()), 
+                true,
+                threads
+            ),
+            &self.config.reference.remap_config(
+                &consensus_db
+            ),
+            &self.config.filter,
+        );
+
+        let coverage: Vec<ReferenceCoverage> = remap_aligner
+            .run_aligner()?
+            .unwrap()
+            .coverage(true, true)?;
+
+        let coverage_unique_reads = identify_unique_reads(&coverage);
+
+        for data in coverage_unique_reads {
+            log::info!("Consensus reference {} ({}) has {} aligned reads and {} uniquely aligned reads", data.0, data.1.unwrap_or(String::from("no_bin")), data.2, data.3)
+        }
+        
         Ok(())
 
     }
     fn extract_remap_sequences(
         &self, 
         remap_fasta: &PathBuf, 
-        coverage: &Vec<Coverage>, 
+        coverage: &Vec<ReferenceCoverage>, 
         refs: &HashMap<String, Record>
     ) -> Result<(), VircovError> {
 
@@ -644,8 +670,8 @@ impl Vircov {
     pub fn summary(
         &self, 
         consensus: Vec<ConsensusRecord>, 
-        scan: Vec<Coverage>, 
-        remap: Vec<Coverage>,
+        scan: Vec<ReferenceCoverage>, 
+        remap: Vec<ReferenceCoverage>,
         depth: Vec<DepthCoverageRecord>
     ) -> Result<VircovSummary, VircovError> {
 
@@ -673,6 +699,42 @@ impl Vircov {
     }
 }
 
+fn identify_unique_reads(coverages: &Vec<ReferenceCoverage>) -> Vec<(String, Option<String>, usize, usize)> {
+    use std::collections::{HashMap, HashSet};
+
+    // Step 1: Count occurrences of each read ID across all references
+    let mut read_counts: HashMap<String, usize> = HashMap::new();
+    for coverage in coverages.iter() {
+        for read_id in &coverage.read_id {
+            *read_counts.entry(read_id.clone()).or_insert(0) += 1;
+        }
+    }
+
+    // Step 2: Identify reads that appear only once across all references
+    let unique_reads: HashSet<String> = read_counts
+        .into_iter()
+        .filter(|&(_, count)| count == 1)
+        .map(|(read_id, _)| read_id)
+        .collect();
+
+    // Step 3: Create new ReferenceCoverage structs with unique reads
+    let filtered_coverages: Vec<(String, Option<String>, usize, usize)> = coverages
+        .iter()
+        .map(|coverage| {
+            // Retain only read IDs that are unique to this reference
+            let filtered_read_ids: Vec<String> = coverage
+                .read_id
+                .iter()
+                .filter(|read_id| unique_reads.contains(*read_id))
+                .cloned()
+                .collect();
+
+            (coverage.reference.clone(), coverage.bin.clone(), coverage.read_id.len(), filtered_read_ids.len())
+        })
+        .collect();
+
+    filtered_coverages
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VircovConfig {
@@ -720,7 +782,7 @@ impl VircovConfig {
                 args.min_consensus_frequency,
                 args.min_consensus_depth
             ),
-            filter: FilterConfig::with_default(args.min_remap_coverage),
+            filter: FilterConfig::with_default(args.min_remap_coverage, args.min_consensus_completeness),
             haplotype: HaplotypeConfig::from_run_args(args.haplotyper.clone()),
             subtype: SubtypeConfig {}
         })
@@ -799,6 +861,7 @@ impl AlignmentConfig {
         filter_args: Option<String>,
         input: Option<Vec<PathBuf>>,
         output: Option<PathBuf>, 
+        secondary: bool,
         threads: usize,
     ) -> Self {
         
@@ -933,7 +996,8 @@ pub struct FilterConfig {
     pub min_grouped_mean_coverage: f64,
     pub min_grouped_alignments: u64,
     pub min_grouped_reads: u64,
-    pub min_remap_coverage: f64
+    pub min_remap_coverage: f64,
+    pub min_consensus_completeness: f64
 }
 impl Default for FilterConfig {
     fn default() -> Self {
@@ -951,13 +1015,15 @@ impl Default for FilterConfig {
             min_grouped_mean_coverage: 0.0,
             min_grouped_alignments: 0,
             min_grouped_reads: 0,
-            min_remap_coverage: 0.0
+            min_remap_coverage: 0.0,
+            min_consensus_completeness: 0.0
         }
     }
 }
 impl FilterConfig {
     pub fn with_default(
-        min_remap_coverage: f64
+        min_remap_coverage: f64,
+        min_consensus_completeness: f64
     ) -> Self {
         Self {
             min_query_length: 0,
@@ -973,7 +1039,8 @@ impl FilterConfig {
             min_grouped_mean_coverage: 0.0,
             min_grouped_alignments: 0,
             min_grouped_reads: 0,
-            min_remap_coverage
+            min_remap_coverage,
+            min_consensus_completeness
         }
     }
 }
@@ -1286,7 +1353,7 @@ impl VircovRecord {
         })
     }
     pub fn from_coverage(
-        coverage: Coverage,
+        coverage: ReferenceCoverage,
         intervals: bool,
     ) -> Self {
         let scan_record = AlignmentRecord::from(coverage, intervals, None);
@@ -1339,7 +1406,7 @@ pub struct AlignmentRecord {
 }
 
 impl AlignmentRecord {
-    pub fn from(coverage: Coverage, intervals: bool, total_reads: Option<u64>) -> Self {
+    pub fn from(coverage: ReferenceCoverage, intervals: bool, total_reads: Option<u64>) -> Self {
         
         Self {
             reference: coverage.reference,

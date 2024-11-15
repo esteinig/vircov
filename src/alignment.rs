@@ -133,7 +133,7 @@ where
 
 /// A struct for a distinct region of alignment
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Coverage {
+pub struct ReferenceCoverage {
     /// Name of the target sequence
     pub reference: String,
     /// Number of non-overlapping alignment regions
@@ -164,7 +164,7 @@ pub struct Coverage {
     pub read_id: Vec<String>,
 }
 
-impl std::fmt::Display for Coverage {
+impl std::fmt::Display for ReferenceCoverage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} | {}", self.reference, self.description)?;
         Ok(())
@@ -192,7 +192,7 @@ pub struct CoverageBin {
     /// Fractional coverage of the alignments
     pub max_coverage: f64,
     /// Coverage tags for alignment regions 
-    pub coverage: Vec<Coverage>,
+    pub coverage: Vec<ReferenceCoverage>,
     /// Unique read identifiers for grouped operations
     pub read_id: HashSet<String>,
 }
@@ -208,7 +208,7 @@ impl std::fmt::Display for CoverageBin {
 }
 
 impl CoverageBin {
-    pub fn from_coverage(bin: &str, coverage: Vec<&Coverage>) -> Result<Self, VircovError> {
+    pub fn from_coverage(bin: &str, coverage: Vec<&ReferenceCoverage>) -> Result<Self, VircovError> {
 
         let mut grouped_coverage = Self {
             id: bin.to_string(),
@@ -325,7 +325,7 @@ pub struct CoverageTableFields {
 impl CoverageTableFields {
     /// Takes a coverage field and subsets it to fields
     /// suitable for tabled output
-    pub fn from(coverage_fields: &Coverage) -> Self {
+    pub fn from(coverage_fields: &ReferenceCoverage) -> Self {
         Self {
             name: coverage_fields.reference.clone(),
             regions: coverage_fields.regions,
@@ -1038,9 +1038,9 @@ impl ReadAlignment {
         &self,
         tags: bool,
         zero: bool,
-    ) -> Result<Vec<Coverage>, VircovError> {
+    ) -> Result<Vec<ReferenceCoverage>, VircovError> {
 
-        let mut coverage_fields: Vec<Coverage> = Vec::new();
+        let mut coverage_fields: Vec<ReferenceCoverage> = Vec::new();
         let mut included_references: Vec<String> = Vec::new();
 
         for (target_name, targets) in &self.target_intervals {
@@ -1132,7 +1132,7 @@ impl ReadAlignment {
                 && unique_reads_n >= self.filter.min_scan_reads
                 && !exclude_target_sequence
             {
-                coverage_fields.push(Coverage {
+                coverage_fields.push(ReferenceCoverage {
                     reference: target_name.to_owned(),
                     regions: target_cov_n,
                     reads: unique_reads_n,
@@ -1168,7 +1168,7 @@ impl ReadAlignment {
 
                             let annotation = Annotation::from(&descr, &self.reference.annotation);
 
-                            coverage_fields.push(Coverage {
+                            coverage_fields.push(ReferenceCoverage {
                                 reference: ref_seq.to_owned(),
                                 regions: 0,
                                 reads: 0,
@@ -1192,7 +1192,7 @@ impl ReadAlignment {
 
         Ok(coverage_fields)
     }
-    pub fn write_reads(coverage: &[Coverage], output: PathBuf, ref_id: bool) -> Result<(), VircovError> {
+    pub fn write_reads(coverage: &[ReferenceCoverage], output: PathBuf, ref_id: bool) -> Result<(), VircovError> {
 
         let mut file_handle = File::create(&output)?;
 
@@ -1221,7 +1221,7 @@ impl ReadAlignment {
 
         Ok(())
     }
-    pub fn write_grouped_reads(&self, coverage_fields: &[CoverageBin], output: PathBuf) -> Result<(), VircovError> {
+    pub fn write_binned_reads(&self, coverage_fields: &[CoverageBin], output: PathBuf) -> Result<(), VircovError> {
 
         std::fs::create_dir_all(&output)?;
         for field in coverage_fields.iter() {
@@ -1236,7 +1236,7 @@ impl ReadAlignment {
         Ok(())
     }
 
-    pub fn write_tsv(coverage: &[Coverage], output: &PathBuf, header: bool) -> Result<(), VircovError> {
+    pub fn write_tsv(coverage: &[ReferenceCoverage], output: &PathBuf, header: bool) -> Result<(), VircovError> {
 
         let mut writer = csv::WriterBuilder::new()
             .delimiter(b'\t')
@@ -1251,7 +1251,7 @@ impl ReadAlignment {
 
     }
 
-    pub fn print_coverage_table(coverage: &mut [Coverage], sort: bool) {
+    pub fn print_coverage_table(coverage: &mut [ReferenceCoverage], sort: bool) {
 
         if sort {
             coverage.sort_by(|a, b| {

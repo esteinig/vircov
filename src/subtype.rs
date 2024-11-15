@@ -2200,48 +2200,16 @@ pub fn process_ncbi_genotypes(
 
 
 
-/// Concatenates multiple Fasta files into a single file.
-///
-/// The function takes a base Fasta file and a list of Fasta files to append to the base file.
-/// It writes the output to a new file specified by `output_path`.
-///
-/// # Arguments
-///
-/// * `base_file` - A `PathBuf` to the base Fasta file.
-/// * `files_to_append` - A vector of `PathBuf` references to the Fasta files to append.
-/// * `output_path` - A `PathBuf` to the output Fasta file.
-///
-/// # Returns
-///
-/// This function returns a `Result<(), ConcatError>`, which is `Ok` if the files were
-/// successfully concatenated, or an `Err` with a `ConcatError` detailing what went wrong.
-///
-/// # Examples
-///
-/// ```
-/// use std::path::PathBuf;
-/// use vircov::subtype::concatenate_fasta_files;
-///
-/// let base_file = PathBuf::from("base.fasta");
-/// let files_to_append = vec![PathBuf::from("append1.fasta"), PathBuf::from("append2.fasta")];
-/// let output_path = PathBuf::from("output.fasta");
-///
-/// if let Err(e) = concatenate_fasta_files(base_file, &files_to_append, output_path) {
-///     println!("An error occurred: {}", e);
-/// }
-/// ```
-pub fn concatenate_fasta_files(base_file: &PathBuf, files_to_append: &[&PathBuf], output_path: &PathBuf) -> Result<(), SubtypeDatabaseError> {
+pub fn concatenate_fasta_files(files: &Vec<PathBuf>, output_path: &PathBuf) -> Result<(), SubtypeDatabaseError> {
     let mut output_file = File::create(&output_path)?;
 
-    // Append base file content to the output file.
-    let base_content = std::fs::read(&base_file)?;
-    output_file.write_all(&base_content)?;
-
     // Iterate over files to append and write their content to the output file.
-    for file_path in files_to_append {
+    for file_path in files {
         let content = std::fs::read(file_path)?;
         output_file.write_all(&content)?;
     }
+
+    output_file.flush()?;
 
     Ok(())
 }
