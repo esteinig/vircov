@@ -634,10 +634,9 @@ impl Vircov {
             .unwrap()
             .coverage(true, true)?;
 
-        let coverage_unique_reads = identify_unique_reads(&coverage);
 
-        for data in coverage_unique_reads {
-            log::info!("Consensus reference {} ({}) has {} aligned reads and {} uniquely aligned reads", data.0, data.1.unwrap_or(String::from("no_bin")), data.2, data.3)
+        for data in coverage {
+            log::info!("Consensus reference {} ({}) has {} aligned reads and {} coverage", data.reference, data.bin.unwrap_or(String::from("no_bin")), data.alignments, data.coverage)
         }
         
         Ok(())
