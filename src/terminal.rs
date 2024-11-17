@@ -137,7 +137,7 @@ pub struct RunArgs {
     #[clap(long, default_value="20", help_heading="Consensus stage")]
     pub consensus_min_quality: usize,
     /// Minimum consensus completeness to take consensus into remapping
-    #[clap(long, default_value="60.0", help_heading="Consensus stage")]
+    #[clap(long, default_value="20.0", help_heading="Consensus stage")]
     pub consensus_min_completeness: f64,
     /// Attempt haplotyping to recover strains from mixed samples
     #[clap(long, help_heading="Haplotype stage")]
@@ -334,7 +334,7 @@ pub struct FilterArgs {
     /// Filter by minimum consensus completeness percent
     #[clap(long, short = 'm')]
     pub min_consensus_completeness: Option<f64>,
-    /// Filter by minimum consensus coverage percent (unique with MAPQ) 
+    /// Filter by minimum consensus coverage percent (MAPQ) 
     #[clap(long, short = 'n')]
     pub min_consensus_coverage_mapq: Option<f64>,
     /// Filter by minimum remap coverage
