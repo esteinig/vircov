@@ -1658,6 +1658,60 @@ impl VircovSummary {
 
         Ok(summary)
     }
+    pub fn filter_samples(
+        input: &PathBuf,
+        output: &PathBuf,
+        bin: Option<String>,
+        exclude_bin: Option<Vec<String>>,
+    ) -> Result<Self, VircovError> {
+
+
+        let summary = VircovSummary::from_tsv(input, true)?;
+
+        let mut retained_samples = Vec::new();
+
+        let excluded_bins = exclude_bin.unwrap_or_default();
+
+        if let Some(target_bin) = bin {
+            // Retain all records of samples that contain the target bin
+            let sample_ids: Vec<String> = summary
+                .records
+                .iter()
+                .filter_map(|record| {
+                    if let Some(ref record_bin) = record.bin {
+                        if record_bin == &target_bin {
+                            return record.id.clone();
+                        }
+                    }
+                    None
+                })
+                .collect();
+
+            // Retain all records of these samples
+            for record in &summary.records {
+                if let Some(ref record_id) = record.id {
+                    if sample_ids.contains(record_id) {
+                        // Exclude records with excluded bins
+                        if let Some(ref record_bin) = record.bin {
+                            if excluded_bins.contains(record_bin) {
+                                continue;
+                            }
+                        }
+                        retained_samples.push(record.clone());
+                    }
+                }
+            }
+        }
+
+        let summary = VircovSummary {
+            records: retained_samples,
+        };
+
+        VircovSummary::write_tsv(&summary, output, true)?;
+
+        Ok(summary)
+    }
+
     pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: Option<f64>, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
 
         let mut records = Vec::new();

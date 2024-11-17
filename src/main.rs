@@ -186,6 +186,15 @@ fn main() -> Result<()> {
                         args.bin.clone()
                     )?;
                 },
+
+                ToolsCommands::FilterSample(args) => {
+                    VircovSummary::filter_samples(
+                        &args.input, 
+                        &args.output, 
+                        args.bin.clone(),
+                        args.exclude_bin.clone()
+                    )?;
+                },
                 ToolsCommands::AnnotateDatabase(args) => {
 
                     let dba = DatabaseAnnotation::new(

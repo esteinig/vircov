@@ -261,9 +261,11 @@ pub enum ToolsCommands {
     /// Process GISAID and Nextstrain files to attempt genotype extraction
     ProcessGisaid(ProcessGisaidArgs),
     /// Concatenate output tables
-    ConcatOutput(ConcatArgs),
+    ConcatOutput(ConcatOutputArgs),
     /// Filter output tables 
-    FilterOutput(FilterArgs)
+    FilterOutput(FilterOutputArgs),
+    /// Filter samples in concatenated output tables 
+    FilterSample(FilterSampleArgs)
 }   
 
 
@@ -299,7 +301,7 @@ pub struct ProcessNcbiArgs {
 
 
 #[derive(Debug, Args)]
-pub struct ConcatArgs {
+pub struct ConcatOutputArgs {
     /// Vircov run output table
     #[clap(long, short = 'i', num_args(0..))]
     pub input: Vec<PathBuf>,
@@ -318,7 +320,7 @@ pub struct ConcatArgs {
 }
 
 #[derive(Debug, Args)]
-pub struct FilterArgs {
+pub struct FilterOutputArgs {
     /// Vircov run output table
     #[clap(long, short = 'i')]
     pub input: PathBuf,
@@ -346,7 +348,23 @@ pub struct FilterArgs {
     /// Filter by minimum scan alignments
     #[clap(long, short = 'a')]
     pub min_scan_alignments: Option<u64>,
+}
 
+
+#[derive(Debug, Args)]
+pub struct FilterSampleArgs {
+    /// Vircov run output table
+    #[clap(long, short = 'i')]
+    pub input: PathBuf,
+    /// Filtered output file
+    #[clap(long, short = 'o')]
+    pub output: PathBuf,
+    /// Retain samples with this bin called
+    #[clap(long, short = 'b')]
+    pub bin: Option<String>,
+    /// Exclude the following bins from the retained samples
+    #[clap(long, short = 'e')]
+    pub exclude_bin: Option<Vec<String>>,
 }
 
 #[derive(Debug, Args)]
