@@ -5,7 +5,7 @@ use crate::error::VircovError;
 use crate::haplotype::{Haplotyper, VircovHaplotype};
 use crate::subtype::concatenate_fasta_files;
 use crate::terminal::{CoverageArgs, RunArgs};
-use crate::utils::{get_file_component, FileComponent};
+use crate::utils::{get_file_component, write_tsv, FileComponent};
 
 use itertools::Itertools;
 use anyhow::Result;
@@ -419,6 +419,7 @@ impl Vircov {
                     let remap_id = bin;
 
                     let bin_read_files = if self.config.alignment.remap_bin_reads {
+                        
                         // Recreate the coverage bin here for read set access
                         let coverage_bin = CoverageBin::from_coverage(
                             bin, 
@@ -476,6 +477,20 @@ impl Vircov {
                         .run_aligner()?
                         .unwrap()
                         .coverage(true, false)?;
+                    
+                    // Output read sets based on remap coverage
+                    
+                    let mut bin_read_ids = HashSet::new();
+                    for cov in &remap_coverage {
+                        for read_id in &cov.read_id {
+                            bin_read_ids.insert(read_id);
+                        }
+                    }
+
+                    write_tsv(
+                        &bin_read_ids.iter().collect(), 
+                        &self.config.outdir.join(format!("{remap_id}.reads.tsv.gz"))
+                    )?;
 
                     // Remove binned reads after alignment - take up a lot of disk space
                     if let Some(bin_reads) = bin_read_files {
@@ -516,6 +531,7 @@ impl Vircov {
                         )?;
 
                         depth_records.push(depth_coverage);
+
 
                         if haplotype && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
@@ -622,7 +638,10 @@ impl Vircov {
             &self.config.reference.remap_config(
                 &consensus_db
             ),
-            &FilterConfig::with_default_mapq(self.config.filter.min_consensus_completeness),
+            &FilterConfig::with_default_mapq(
+                if self.config.alignment.aligner == Aligner::Bowtie2 { 40 } else { 60 },
+                self.config.filter.min_consensus_completeness
+            ),
         );
 
         let coverage: Vec<ReferenceCoverage> = remap_aligner
@@ -1030,10 +1049,11 @@ impl FilterConfig {
         }
     }
     pub fn with_default_mapq(
+        min_mapq: u8,
         min_consensus_completeness: f64
     ) -> Self {
         Self {
-            min_mapq: 60,
+            min_mapq,
             min_consensus_completeness,
             ..Default::default()
         }
@@ -1358,7 +1378,7 @@ impl VircovRecord {
             consensus_missing,
             consensus_completeness,
             consensus_alignments_mapq,
-            consensus_coverage_mapq: consensus_coverage_mapq,
+            consensus_coverage_mapq,
             bin: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
