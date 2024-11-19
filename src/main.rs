@@ -192,7 +192,8 @@ fn main() -> Result<()> {
                         &args.input, 
                         &args.output, 
                         args.bin.clone(),
-                        args.exclude_bin.clone()
+                        args.exclude_bin.clone(),
+                        args.strict
                     )?;
                 },
                 ToolsCommands::AnnotateDatabase(args) => {

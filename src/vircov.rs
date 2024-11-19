@@ -577,17 +577,21 @@ impl Vircov {
                         if bai.exists() { remove_file(bai)? };
                         
                     }
-
+                    
                     Ok((consensus_records, remap_coverage, depth_records))
                 })
                 .collect();
+            
 
             let mut remap_data = Vec::new();
             let mut consensus_data = Vec::new();
             let mut depth_data = Vec::new();
 
-            for result in results {
-                let (consensus, remap, depth_coverage) = result?;
+            for (i, result) in results.into_iter().enumerate() {
+                let (consensus, remap, depth_coverage) = result.map_err(|e|{
+                    log::error!("Error occurring here at index: {i}");
+                    e
+                })?;
                 
                 for consensus_record in consensus.into_iter().flatten() {
                     consensus_data.push(consensus_record)
@@ -1681,32 +1685,40 @@ impl VircovSummary {
     pub fn filter_samples(
         input: &PathBuf,
         output: &PathBuf,
-        bin: Option<String>,
+        bin: Option<Vec<String>>,
         exclude_bin: Option<Vec<String>>,
+        strict: bool,
     ) -> Result<Self, VircovError> {
-
-
         let summary = VircovSummary::from_tsv(input, true)?;
-
+    
         let mut retained_samples = Vec::new();
-
+    
+        let target_bins = bin.unwrap_or_default();
         let excluded_bins = exclude_bin.unwrap_or_default();
-
-        if let Some(target_bin) = bin {
-            // Retain all records of samples that contain the target bin
+    
+        if !target_bins.is_empty() {
+            // Retain all records of samples that match the target bins based on the `strict` flag
             let sample_ids: Vec<String> = summary
                 .records
                 .iter()
                 .filter_map(|record| {
                     if let Some(ref record_bin) = record.bin {
-                        if record_bin == &target_bin {
-                            return record.id.clone();
+                        if strict {
+                            // Strict mode: Retain only samples containing ALL target bins
+                            if target_bins.iter().all(|bin| record_bin.contains(bin)) {
+                                return record.id.clone();
+                            }
+                        } else {
+                            // Non-strict mode: Retain samples containing ANY target bin
+                            if target_bins.iter().any(|bin| record_bin.contains(bin)) {
+                                return record.id.clone();
+                            }
                         }
                     }
                     None
                 })
                 .collect();
-
+    
             // Retain all records of these samples
             for record in &summary.records {
                 if let Some(ref record_id) = record.id {
@@ -1722,15 +1734,15 @@ impl VircovSummary {
                 }
             }
         }
-
-        let summary = VircovSummary {
+    
+        let filtered_summary = VircovSummary {
             records: retained_samples,
         };
-
-        VircovSummary::write_tsv(&summary, output, true)?;
-
-        Ok(summary)
-    }
+    
+        VircovSummary::write_tsv(&filtered_summary, output, true)?;
+    
+        Ok(filtered_summary)
+    }    
 
     pub fn concatenate(input: &Vec<PathBuf>, output: &PathBuf, min_completeness: Option<f64>, file_id: bool, file_dir: bool) -> Result<(), VircovError> {
 

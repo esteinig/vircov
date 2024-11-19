@@ -359,12 +359,15 @@ pub struct FilterSampleArgs {
     /// Filtered output file
     #[clap(long, short = 'o')]
     pub output: PathBuf,
-    /// Retain samples with this bin called
-    #[clap(long, short = 'b')]
-    pub bin: Option<String>,
+    /// Retain samples with any of these bins called
+    #[clap(long, short = 'b', num_args(0..))]
+    pub bin: Option<Vec<String>>,
     /// Exclude the following bins from the retained samples
-    #[clap(long, short = 'e')]
+    #[clap(long, short = 'e', num_args(0..))]
     pub exclude_bin: Option<Vec<String>>,
+    /// Strict mode - retian samples with all of the requested bins called
+    #[clap(long, short = 's')]
+    pub strict: bool,
 }
 
 #[derive(Debug, Args)]
