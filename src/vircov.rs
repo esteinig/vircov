@@ -502,6 +502,8 @@ impl Vircov {
                         }
                     }
 
+                    log::warn!("Starting remap coverage for bin '{bin}'");
+
                     let mut consensus_records = Vec::new();
                     let mut depth_records = Vec::new();
 
@@ -537,8 +539,11 @@ impl Vircov {
                         depth_records.push(depth_coverage);
 
 
+                        log::info!("Depth coverage for '{bin}': {}", ref_cov.coverage);
+
                         if haplotype && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
+                            log::info!("Creating haplotype consensus assembly from bin alignment '{bin}': {consensus_name}");
                             let vircov_haplotype = VircovHaplotype::new(
                                     outdir, 
                                     HaplotypeConfig::with_default(
@@ -592,7 +597,7 @@ impl Vircov {
             let mut depth_data = Vec::new();
 
             for (i, result) in results.into_iter().enumerate() {
-                
+
                 let (consensus, remap, depth_coverage) = result.map_err(|e| {
                     log::error!("Error occurring here at index: {i}");
                     e
