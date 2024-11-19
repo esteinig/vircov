@@ -91,10 +91,9 @@ impl VircovConsensus {
             ivar_header,
             assembler_args,
         );
-        
+
         self.run_command(&cmd)?;
        
-
         Ok(self.parse_consensus_sequence(&self.config.output)?)
     }
     pub fn parse_consensus_sequence(&self, fasta: &PathBuf) -> Result<Vec<ConsensusRecord>, VircovError>{

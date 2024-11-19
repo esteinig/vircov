@@ -593,12 +593,9 @@ impl Vircov {
             let mut consensus_data = Vec::new();
             let mut depth_data = Vec::new();
 
-            for (i, result) in results.into_iter().enumerate() {
+            for result in results.into_iter() {
 
-                let (consensus, remap, depth_coverage) = result.map_err(|e| {
-                    log::error!("Error occurring here at index: {i}");
-                    e
-                })?;
+                let (consensus, remap, depth_coverage) = result?;
                 
                 for consensus_record in consensus.into_iter().flatten() {
                     consensus_data.push(consensus_record)
