@@ -539,11 +539,10 @@ impl Vircov {
                         depth_records.push(depth_coverage);
 
 
-                        log::info!("Depth coverage for '{bin}': {}", ref_cov.coverage);
+                        log::info!("Coverage for '{bin}': {}", ref_cov.coverage);
 
                         if haplotype && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
-                            log::info!("Creating haplotype consensus assembly from bin alignment '{bin}': {consensus_name}");
                             let vircov_haplotype = VircovHaplotype::new(
                                     outdir, 
                                     HaplotypeConfig::with_default(
@@ -555,6 +554,8 @@ impl Vircov {
                             )?;
                             vircov_haplotype.haplotype()?;
                         }
+
+                        log::info!("Haplotype onsensus assembly completed");
 
                         if consensus && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 

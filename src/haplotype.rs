@@ -57,11 +57,15 @@ impl VircovHaplotype {
 
         let vcf = self.config.alignment.with_extension("vcf");
 
+        log::info!("File name");
         let bin_name = get_file_component(&self.config.alignment, FileComponent::FileStem)?;
         let bin_outdir = self.outdir.join(format!("{bin_name}"));
 
+        log::info!("Freebayes");
         self.run_freebayes(&self.config.alignment, &vcf)?;
+        log::info!("Floria");
         let strain_bam = self.phase_floria(&vcf, &bin_outdir, &bin_name)?;
+        log::info!("Consensus");
         self.assemble_consensus_haplotypes(&strain_bam, &bin_outdir, &bin_name)?;
 
         Ok(Vec::new())
