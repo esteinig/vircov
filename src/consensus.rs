@@ -91,9 +91,7 @@ impl VircovConsensus {
             ivar_header,
             assembler_args,
         );
-
-        log::warn!("{cmd}");
-
+        
         self.run_command(&cmd)?;
        
 

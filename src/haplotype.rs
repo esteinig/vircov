@@ -144,7 +144,8 @@ impl VircovHaplotype {
             },
             Err(_) => {
                 log::info!("No haplotypes could be called for bin '{name}'");
-                remove_dir_all(outdir)?;
+                log::warn!("{}", cmd);
+                if outdir.exists() { remove_dir_all(outdir)?; }
                 return Ok(Vec::new())
             }
         }

@@ -502,8 +502,6 @@ impl Vircov {
                         }
                     }
 
-                    log::warn!("Starting remap coverage for bin '{bin}'");
-
                     let mut consensus_records = Vec::new();
                     let mut depth_records = Vec::new();
 
@@ -539,7 +537,7 @@ impl Vircov {
                         depth_records.push(depth_coverage);
 
 
-                        log::info!("Coverage for '{bin}': {}", ref_cov.coverage);
+                        log::info!("Remap coverage for '{bin}': {:.2}", ref_cov.coverage*100.0);
 
                         if haplotype && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
@@ -554,8 +552,6 @@ impl Vircov {
                             )?;
                             vircov_haplotype.haplotype()?;
                         }
-
-                        log::info!("Haplotype onsensus assembly completed");
 
                         if consensus && ref_cov.coverage >= self.config.filter.min_remap_coverage {
 
