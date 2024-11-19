@@ -592,7 +592,7 @@ impl Vircov {
             let mut depth_data = Vec::new();
 
             for (i, result) in results.into_iter().enumerate() {
-                log::error!("{:#?}", result);
+                
                 let (consensus, remap, depth_coverage) = result.map_err(|e| {
                     log::error!("Error occurring here at index: {i}");
                     e

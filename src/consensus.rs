@@ -92,6 +92,8 @@ impl VircovConsensus {
             assembler_args,
         );
 
+        log::warn!("{cmd}");
+
         self.run_command(&cmd)?;
        
 
@@ -100,7 +102,8 @@ impl VircovConsensus {
     pub fn parse_consensus_sequence(&self, fasta: &PathBuf) -> Result<Vec<ConsensusRecord>, VircovError>{
         
         let mut reader = match parse_fastx_file(fasta) {
-            Ok(reader) => reader, Err(err) => {
+            Ok(reader) => reader, 
+            Err(err) => {
                 log::error!("{}", err.to_string());
                 log::warn!("Possibly no consensus sequence generated in: {}", fasta.display());
                 return Ok(Vec::new())
