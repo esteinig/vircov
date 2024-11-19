@@ -495,7 +495,10 @@ impl Vircov {
                     // Remove binned reads after alignment - take up a lot of disk space
                     if let Some(bin_reads) = bin_read_files {
                         for file in bin_reads {
-                            remove_file(file)?;
+                            remove_file(file).map_err(|e| {
+                                log::error!("Error removing bin read file");
+                                e
+                            })?;
                         }
                     }
 
@@ -520,7 +523,8 @@ impl Vircov {
                                 String::from("nan"),
                             )
                         };
-
+                        
+                        log::info!("Extracting depth of coverage information for bin '{}'", bin);
                         let depth = outdir.join(format!("{bin}.{seg_name}.depth"));
                         let depth_coverage = remap_aligner.run_depth_coverage(  // runs only if min_depth_coverage is Some and > 0
                             &bam, 
@@ -588,7 +592,8 @@ impl Vircov {
             let mut depth_data = Vec::new();
 
             for (i, result) in results.into_iter().enumerate() {
-                let (consensus, remap, depth_coverage) = result.map_err(|e|{
+                log::error!("{:#?}", result);
+                let (consensus, remap, depth_coverage) = result.map_err(|e| {
                     log::error!("Error occurring here at index: {i}");
                     e
                 })?;
