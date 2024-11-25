@@ -627,6 +627,11 @@ impl Vircov {
             .map(|r| r.fasta.to_path_buf())
             .collect();
 
+        if fasta.is_empty() {
+            // No consensus records available
+            return Ok(Vec::new())
+        }
+
         let consensus_db = self.config.outdir.join("consensus.fasta");
         concatenate_fasta_files(&fasta, &consensus_db)?;
 
