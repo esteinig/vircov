@@ -377,9 +377,9 @@ pub struct AnnotateDatabaseArgs {
     pub fasta: PathBuf,
     /// Vircov database sequence annotation file (.tsv)
     /// 
-    /// Required columns: id (string, sequence identifier, required value), bin (string, binning variable, required value), 
+    /// Columns: id (string, sequence identifier, required value), bin (string, binning variable, required value), 
     /// segment (string, segment annotation, optional value), name (string, organism name, optional value), 
-    /// description (string, sequence description, optional value)
+    /// description (string, sequence description, optional value), taxid (string, taxonomic identifier, optional value)
     #[clap(long, short = 'a')]
     pub annotations: PathBuf,
     /// Annotated database sequence file (.fasta)
