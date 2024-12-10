@@ -20,7 +20,8 @@ pub struct AnnotationRecord {
     bin: String,
     segment: Option<String>,
     name: Option<String>,
-    description: Option<String>
+    description: Option<String>,
+    taxid: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,7 +32,8 @@ pub struct AnnotationConfig {
     pub segment: String, 
     pub segment_nan: String, 
     pub name: String,
-    pub description: String
+    pub description: String,
+    pub taxid: String
 }
 impl AnnotationConfig {
     pub fn from_preset(preset: AnnotationPreset) -> Self {
@@ -49,7 +51,8 @@ impl AnnotationConfig {
             segment: String::from("segment"),
             name: String::from("usual_name"),
             segment_nan: String::from("N/A"),
-            description: String::from("description")
+            description: String::from("description"),
+            taxid: String::from("taxid")
         }
     }
     pub fn ictv() -> Self {
@@ -60,12 +63,13 @@ impl AnnotationConfig {
             segment: String::from("segment"),
             segment_nan: String::from("NAN"),
             name: String::from("name"),
-            description: String::from("description")
+            description: String::from("description"),
+            taxid: String::from("taxid")
         }
     }
     pub fn str_from_record(&self, record: &AnnotationRecord) -> String {
         format!(
-            "{bin}{vsep}{vbin}{fsep}{segment}{vsep}{vsegment}{fsep}{name}{vsep}{vname}{fsep}{description}{vsep}{vdescription}",
+            "{bin}{vsep}{vbin}{fsep}{segment}{vsep}{vsegment}{fsep}{name}{vsep}{vname}{fsep}{description}{vsep}{vdescription}{fsep}{taxid}{vsep}{vtaxid}",
             bin=self.bin,
             vsep=self.value_delimiter,
             vbin=record.bin,
@@ -75,7 +79,9 @@ impl AnnotationConfig {
             name=self.name,
             vname=record.name.clone().unwrap_or(String::from("")),
             description=self.description,
-            vdescription=record.description.clone().unwrap_or(String::from(""))
+            vdescription=record.description.clone().unwrap_or(String::from("")),
+            taxid=self.taxid,
+            vtaxid=record.taxid.clone().unwrap_or(String::from(""))
         )
     }
     pub fn segment_name_file(&self, segment: &str) -> String {
@@ -97,6 +103,9 @@ impl AnnotationConfig {
     pub fn description_field(&self) -> String {
         format!("{}{}", self.description, self.value_delimiter)
     }
+    pub fn taxid_field(&self) -> String {
+        format!("{}{}", self.taxid, self.value_delimiter)
+    }
 }
 impl Default for AnnotationConfig {
     fn default() -> Self {
@@ -107,7 +116,8 @@ impl Default for AnnotationConfig {
             segment: String::from("segment"),
             segment_nan: String::from("NAN"),
             name: String::from("name"),
-            description: String::from("description")
+            description: String::from("description"),
+            taxid: String::from("taxid")
         }
     }
 }
@@ -116,7 +126,8 @@ impl Default for AnnotationConfig {
 pub struct Annotation {
     pub bin: Option<String>,
     pub name: Option<String>,
-    pub segment: Option<String>
+    pub segment: Option<String>,
+    pub taxid: Option<String>
 }
 impl Annotation {
     pub fn from(description: &str, options: &AnnotationConfig) -> Self {
@@ -150,8 +161,18 @@ impl Annotation {
             _ => None
         };
 
+
+        let taxid_fields: Vec<&str> = fields.iter().filter(|field| {
+            field.starts_with(&options.taxid_field())
+        }).map(|x| *x).collect();
+        
+        let taxid = match taxid_fields.first() {
+            Some(f) => Some(f.trim().trim_start_matches(&options.taxid_field()).to_string()),
+            _ => None
+        };
+
         Self {
-            bin, name, segment
+            bin, name, segment, taxid
         }       
 
     }

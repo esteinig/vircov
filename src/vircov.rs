@@ -1254,6 +1254,9 @@ pub struct VircovRecord {
     #[tabled(rename="Segment")]
     #[tabled(display_with = "display_option_string")]
     pub segment: Option<String>,
+    #[tabled(rename="Taxid")]
+    #[tabled(display_with = "display_option_string")]
+    pub taxid: Option<String>,
     #[tabled(rename="Reference")]
     pub reference: String,
     #[tabled(rename="Length")]
@@ -1395,6 +1398,7 @@ impl VircovRecord {
             bin: annotation.bin,
             name: annotation.name,
             segment: annotation.segment,
+            taxid: annotation.taxid,
             reference_description: scan_record.description,
         })
     }
@@ -1430,6 +1434,7 @@ impl VircovRecord {
             bin: None,
             name: None,
             segment: None,
+            taxid: None,
             reference_description: scan_record.description
         }
 
