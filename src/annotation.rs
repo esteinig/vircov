@@ -17,13 +17,13 @@ pub enum AnnotationPreset {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AnnotationRecord {
-    id: String,
-    bin: String,
-    segment: Option<String>,
-    name: Option<String>,
-    description: Option<String>,
-    taxid: Option<String>,
-    genome: Option<String>
+    pub id: String,
+    pub bin: String,
+    pub segment: Option<String>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub taxid: Option<String>,
+    pub genome: Option<String>
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
