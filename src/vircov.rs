@@ -212,7 +212,7 @@ impl Vircov {
             
             let bin = bin.trim().replace(
                 &self.config.reference.annotation.bin_field(),""
-            ); // TODO
+            );
 
             let binned_coverage_data = CoverageBin::from_coverage(&bin, coverage)?;
 
@@ -227,46 +227,46 @@ impl Vircov {
 
         Ok(binned_coverage_all)
     }
-    pub fn extract_bin_reads(
-        &self,
-        coverage_bins: &Vec<CoverageBin>,
-        outdir: &PathBuf,
-        threads: usize
-    ) -> Result<HashMap<String, Vec<PathBuf>>, VircovError> {  // group, read fastq
+    // pub fn extract_bin_reads(
+    //     &self,
+    //     coverage_bins: &Vec<CoverageBin>,
+    //     outdir: &PathBuf,
+    //     threads: usize
+    // ) -> Result<HashMap<String, Vec<PathBuf>>, VircovError> {  // group, read fastq
 
-        let result = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .expect("Failed to create thread pool")
-            .install(|| -> HashMap<String, Vec<PathBuf>> {
+    //     let result = rayon::ThreadPoolBuilder::new()
+    //         .num_threads(threads)
+    //         .build()
+    //         .expect("Failed to create thread pool")
+    //         .install(|| -> HashMap<String, Vec<PathBuf>> {
 
-            let bin_reads = coverage_bins.par_iter().map(|coverage_bin| -> (String, Vec<PathBuf>) {
+    //         let bin_reads = coverage_bins.par_iter().map(|coverage_bin| -> (String, Vec<PathBuf>) {
                 
-                log::info!("Extracting reads for remapping of bin: {}", coverage_bin.sanitized_id());
+    //             log::info!("Extracting reads for remapping of bin: {}", coverage_bin.sanitized_id());
 
-                let output = self.config.alignment.get_output_read_paths(
-                    &coverage_bin.sanitized_id(), 
-                    "fastq", 
-                    outdir
-                ).expect(&format!("Failed to get read paths for reference bin remapping: {}", coverage_bin.sanitized_id()));
+    //             let output = self.config.alignment.get_output_read_paths(
+    //                 &coverage_bin.sanitized_id(), 
+    //                 "fastq", 
+    //                 outdir
+    //             ).expect(&format!("Failed to get read paths for reference bin remapping: {}", coverage_bin.sanitized_id()));
 
-                coverage_bin.write_group_reads(
-                    self.config.alignment.input.clone(), 
-                    output.clone()
-                ).expect(&format!("Failed to write reads for reference bin remapping: {}", coverage_bin.sanitized_id()));
+    //             coverage_bin.write_group_reads(
+    //                 self.config.alignment.input.clone(), 
+    //                 output.clone()
+    //             ).expect(&format!("Failed to write reads for reference bin remapping: {}", coverage_bin.sanitized_id()));
 
-                // Same keys as the group selection coverage structs for remapping
-                (coverage_bin.sanitized_id().clone(), output)
-            }).collect::<Vec<_>>();
+    //             // Same keys as the group selection coverage structs for remapping
+    //             (coverage_bin.sanitized_id().clone(), output)
+    //         }).collect::<Vec<_>>();
 
-            HashMap::from_iter(bin_reads)
-        });
+    //         HashMap::from_iter(bin_reads)
+    //     });
 
-        Ok(result)
-    }
+    //     Ok(result)
+    // }
     pub fn select_bin_reference(
         &self,
-        coverage_bins: &Vec<CoverageBin>, // If grouped, these are grouped fields
+        coverage_bins: &Vec<CoverageBin>,
         select_by: SelectHighest,
         outdir: Option<PathBuf>,
     ) -> Result<HashMap<String, Vec<ReferenceCoverage>> , VircovError> {
@@ -282,6 +282,9 @@ impl Vircov {
         let mut selected_reference_coverage: HashMap<String, Vec<ReferenceCoverage>> = HashMap::new();
 
         for coverage_bin in coverage_bins {
+
+            // For each bin, group the alignments by segment 
+
             let mut grouped_segments: BTreeMap<String, Vec<ReferenceCoverage>> = BTreeMap::new();
 
             for cov in &coverage_bin.coverage {
@@ -301,93 +304,211 @@ impl Vircov {
                 }
             }
 
-            let segmented = !grouped_segments.is_empty();
+            // Segment takes priority in the conditional statement below, therefore we must
+            // still place all sequences in the grouped genome category (even those without
+            // genome annotation)
 
-            // Filter reference sequences (contained in tags) by highest number of (unique) reads, alignments or coverage
+            // For each bin, group the alignments by genome if the annotation is not none...
+            let mut grouped_genomes: BTreeMap<String, Vec<ReferenceCoverage>> = BTreeMap::new(); 
+
+            for cov in &coverage_bin.coverage {
+
+                if let Some(genome) = &cov.genome {
+
+                    if genome != &self.config.reference.annotation.genome_nan {
+                        match grouped_genomes.entry(genome.clone()) {
+                            Entry::Occupied(mut entry) => {
+                                entry.get_mut().push(cov.clone());
+                            }
+                            Entry::Vacant(entry) => {
+                                entry.insert(vec![cov.clone()]);
+                            }
+                        }
+                    } else {
+                        // ... otherwise use the unique reference sequence identifier as the genome (whole genome sequences, annotated with parent genome NAN)
+                        grouped_genomes.insert(cov.reference.clone(), vec![cov.clone()]);
+                    }
+                } else {
+                    // ... otherwise use the unique reference sequence identifier as the genome (whole genome sequences, not annotated with parent genome)
+                    grouped_genomes.insert(cov.reference.clone(), vec![cov.clone()]);
+                }
+            }  // since we use the (unique) reference sequence identifier in the absence of annotation (or NAN) we can insert rather than checking for entries
+
+
+            // Are segments present for this bin?
+            let segmented = !grouped_segments.is_empty();
 
             if segmented {
 
-                let mut selected_segments: BTreeMap<String, ReferenceCoverage> = BTreeMap::new();
+                // If segmented, select the best reference sequence for each unique segment in this coverage bin
 
-                for (segment, cov_fields) in grouped_segments {
-                    let selected = match select_by {
-                        SelectHighest::Reads => cov_fields.iter().max_by_key(|x| x.reads),
-                        SelectHighest::Coverage => cov_fields.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                        SelectHighest::Alignments => cov_fields.iter().max_by_key(|x| x.alignments)
-                    };
-
-                    match selected {
-                        Some(selected) => {
-                            selected_segments
-                                .entry(segment)
-                                .or_insert_with(|| selected.clone());
-                        }
-                        None => return Err(VircovError::BinSelectReference),
-                    }
-                }
-
-                if let Some(path) = &outdir {
-
-                    let file_handle = std::fs::File::create(
-                        path.join(
-                            format!("{}.fasta", coverage_bin.sanitized_id())
-                        )
-                    )?;
-                    let mut writer = noodles::fasta::Writer::new(file_handle);
-
-                    for (_, segment_cov) in selected_segments {
-                        let seq = &refs[&segment_cov.reference];
-                        writer.write_record(seq)?;
-                        
-                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
-                            .and_modify(|x| x.push(segment_cov.clone()))
-                            .or_insert(vec![segment_cov]);
-                    }
-                } else {
-                    for (_, segment_cov) in selected_segments {
-                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
-                            .and_modify(|x| x.push(segment_cov.clone()))
-                            .or_insert(vec![segment_cov]);
-                    }
-                }
+                self.select_and_write_segments(
+                    grouped_segments,
+                    select_by.clone(),
+                    outdir.clone(),
+                    coverage_bin,
+                    refs,
+                    &mut selected_reference_coverage
+                )?;
 
             } else {
 
-                // If not segmented, simply select the best reference sequence using the
-                // selection metric and select the sequence from the header fields
-                // to write to FASTA
+                // If not segmented, select the best reference sequence by genome from the grouped genomes 
+                // (either complete genome or contigs annotate with parent genome)
 
-                let max = match select_by {
-                    SelectHighest::Reads => coverage_bin.coverage.iter().max_by_key(|x| x.reads),
-                    SelectHighest::Coverage => coverage_bin.coverage.iter().max_by_key(|x| OrderedFloat(x.coverage)),
-                    SelectHighest::Alignments => coverage_bin.coverage.iter().max_by_key(|x| x.alignments)
-                };
+                self.select_and_write_genomes(
+                    grouped_genomes,
+                    select_by.clone(),
+                    outdir.clone(),
+                    coverage_bin,
+                    refs,
+                    &mut selected_reference_coverage
+                )?;
 
-                match max {
-                    Some(field) => {
-                        let seq = &refs[&field.reference];
-
-                        if let Some(path) = &outdir {
-                            
-                            let file_handle = std::fs::File::create(
-                                path.join(
-                                    format!("{}.fasta", coverage_bin.sanitized_id())
-                                )
-                            )?;
-                            let mut writer = noodles::fasta::Writer::new(file_handle);
-                            writer.write_record(seq)?;
-                        }
-
-                        selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
-                            .and_modify(|x| x.push(field.clone()))
-                            .or_insert(vec![field.clone()]);
-                    }
-                    _ => return Err(VircovError::BinSelectReference),
-                }
             }
         }
 
         Ok(selected_reference_coverage)
+    }
+    fn select_and_write_segments(
+        &self, 
+        grouped_segments: BTreeMap<String, Vec<ReferenceCoverage>>, 
+        select_by: SelectHighest, 
+        outdir: Option<PathBuf>,
+        coverage_bin: &CoverageBin,
+        refs: &HashMap<String, Record>,
+        selected_reference_coverage: &mut HashMap<String, Vec<ReferenceCoverage>>
+    ) -> Result<(), VircovError> {
+
+        // We select a single segment per detected (unique) segment annotation as best reference segment and
+        // write them all to a single file if the output directory is specified
+
+        let mut selected_segments: BTreeMap<String, ReferenceCoverage> = BTreeMap::new();
+
+        for (segment, ref_cov) in grouped_segments {
+            let selected = match select_by {
+                SelectHighest::Reads => ref_cov.iter().max_by_key(|x| x.reads),
+                SelectHighest::Coverage => ref_cov.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+                SelectHighest::Alignments => ref_cov.iter().max_by_key(|x| x.alignments)
+            };
+
+            match selected {
+                Some(selected) => {
+                    selected_segments
+                        .entry(segment)
+                        .or_insert_with(|| selected.clone());
+                }
+                None => return Err(VircovError::BinSelectSegment),
+            }
+        }
+
+        if let Some(path) = outdir {
+
+            let file_handle = std::fs::File::create(
+                path.join(
+                    format!("{}.fasta", coverage_bin.sanitized_id())
+                )
+            )?;
+            let mut writer = noodles::fasta::Writer::new(file_handle);
+
+            for (_, segment_cov) in selected_segments {
+                let seq = &refs[&segment_cov.reference];
+                writer.write_record(seq)?;
+                
+                selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
+                    .and_modify(|x| x.push(segment_cov.clone()))
+                    .or_insert(vec![segment_cov]);
+            }
+        } else {
+            for (_, segment_cov) in selected_segments {
+                selected_reference_coverage.entry(coverage_bin.sanitized_id().clone())
+                    .and_modify(|x| x.push(segment_cov.clone()))
+                    .or_insert(vec![segment_cov]);
+            }
+        }
+
+        Ok(())
+        
+    }
+
+    fn select_and_write_genomes(
+        &self, 
+        grouped_genomes: BTreeMap<String, Vec<ReferenceCoverage>>, 
+        select_by: SelectHighest, 
+        outdir: Option<PathBuf>,
+        coverage_bin: &CoverageBin,
+        refs: &HashMap<String, Record>,
+        selected_reference_coverage: &mut HashMap<String, Vec<ReferenceCoverage>>
+    ) -> Result<(), VircovError> {
+
+        #[derive(Debug)]
+        struct GenomeStats {
+            genome: String,
+            ref_covs: Vec<ReferenceCoverage>,
+            reads: u64,
+            coverage: f64,
+            alignments: u64
+        }
+
+
+        // We select all sequences per detected (unique) genome annotation, selecting the 
+        // best genome by aggregating alignment statistics
+
+        // Sum the selection statistics for each genome...
+        let mut genome_stats: Vec<GenomeStats> = Vec::new();
+        for (genome, ref_covs) in grouped_genomes {
+            genome_stats.push(GenomeStats {
+                genome,
+                ref_covs: ref_covs.clone(),
+                reads: ref_covs.iter().map(|x| x.reads).sum(),
+                coverage: ref_covs.iter().map(|x| x.coverage).sum(),
+                alignments: ref_covs.iter().map(|x: &ReferenceCoverage| x.alignments).sum(),
+            });
+        }
+
+        // ... and select the best genome from aggregated genome statistics
+        let selected = match select_by {
+            SelectHighest::Reads => genome_stats.iter().max_by_key(|x| x.reads),
+            SelectHighest::Coverage => genome_stats.iter().max_by_key(|x| OrderedFloat(x.coverage)),
+            SelectHighest::Alignments => genome_stats.iter().max_by_key(|x| x.alignments)
+        };
+
+        let selected_genome = match selected {
+            Some(selected) => selected,
+            None => return Err(VircovError::BinSelectGenome),
+        };
+        
+        // if coverage_bin.sanitized_id() == "Mastadenovirus_caesari" {
+        //     log::warn!("Selected genome for Mastadenovirus caesari: {}", selected_genome.genome);
+        //     for cov in &selected_genome.ref_covs {
+        //         log::warn!("Sequence for this selected genome: {}", cov.reference)
+        //     }
+        // }
+
+        if let Some(path) = outdir {
+
+            let file_handle = std::fs::File::create(
+                path.join(
+                    format!("{}.fasta", coverage_bin.sanitized_id())
+                )
+            )?;
+
+            let mut writer = noodles::fasta::Writer::new(file_handle);
+
+            // Write all detected sequences from this genome to file
+            for ref_cov in &selected_genome.ref_covs {
+                let seq = &refs[&ref_cov.reference];
+                writer.write_record(seq)?;
+            };
+        }
+        
+        selected_reference_coverage.insert(
+            coverage_bin.sanitized_id().clone(), 
+            selected_genome.ref_covs.clone()
+        );
+
+        Ok(())
+        
     }
     pub fn remap_bin_reference(
         &self, 
@@ -505,24 +626,27 @@ impl Vircov {
                     let mut consensus_records = Vec::new();
                     let mut depth_records = Vec::new();
 
-                    for ref_cov in &remap_coverage {
-
+                    for (remap_index, ref_cov) in remap_coverage.iter().enumerate() {
+                        
                         // Reference output must have extension '.fa' matching auto-extension from iVar
                         let (filter_reference, consensus_name, seg_name) = match &ref_cov.segment {
                             Some(segment) => {
-                                let seg = self.config.reference.annotation.segment_name_file(segment);
-                                (
-                                    Some(ref_cov.reference.clone()), 
-                                    format!("{bin}.{seg}.consensus.fa"),
-                                    seg
-                                )
+                                if self.config.reference.annotation.segment_is_nan(segment) {
+                                    self.get_genome_consensus_data(ref_cov, bin, remap_index)
+                                } else {
+                                    let segment = self.config.reference.annotation.sanitize(&segment);
+                                    (
+                                        Some(ref_cov.reference.clone()), 
+                                        format!("{bin}.{segment}.consensus.fa"),
+                                        segment.to_string()
+                                    )
+                                }
                             }, 
-                            None => (
-                                None, 
-                                format!("{bin}.nan.consensus.fa"),
-                                String::from("nan"),
-                            )
+                            None => self.get_genome_consensus_data(ref_cov, bin, remap_index)
                         };
+
+
+                        log::info!("{:?} {:?} {:?}", ref_cov.bin, consensus_name, seg_name);
                         
                         log::info!("Extracting depth of coverage information for bin '{}'", bin);
                         let depth = outdir.join(format!("{bin}.{seg_name}.depth"));
@@ -612,7 +736,31 @@ impl Vircov {
         })
 
     }
-
+    fn get_genome_consensus_data(&self, ref_cov: &ReferenceCoverage, bin: &str, index: usize) -> (Option<String>, String, String) {
+        match &ref_cov.genome {
+            Some(genome) => {
+                if self.config.reference.annotation.genome_is_nan(genome) {
+                    (
+                        None, 
+                        format!("{bin}.nan.consensus.fa"),
+                        String::from("nan"),
+                    )
+                } else {
+                    let genome = self.config.reference.annotation.sanitize(&genome);
+                    (
+                        Some(ref_cov.reference.clone()), 
+                        format!("{bin}.{genome}-{index}.consensus.fa"),
+                        format!("{genome}-{index}")
+                    )
+                }
+            },
+            None => (
+                None, 
+                format!("{bin}.nan.consensus.fa"),
+                String::from("nan"),
+            )
+        }
+    }
     pub fn remap_bin_consensus(
         &self,
         consensus: &Vec<ConsensusRecord>
@@ -705,13 +853,13 @@ impl Vircov {
             scan
                 .iter()
                 .map(|cov| AlignmentRecord::from(
-                    cov.clone(), 
+                    cov, 
                     false, 
                     None
                 ))
                 .collect(),
             remap.iter().map(|cov| AlignmentRecord::from(
-                cov.clone(), 
+                cov, 
                 false, 
                 None
             )).collect(),
@@ -719,7 +867,7 @@ impl Vircov {
             consensus,
         consensus_remap
             .iter()
-            .map(|cov| AlignmentRecord::from(cov.clone(), false, None))
+            .map(|cov| AlignmentRecord::from(cov, false, None))
             .collect(),
             &&self.config.reference.annotation
         )
@@ -931,6 +1079,7 @@ impl AlignmentConfig {
     ) -> Self {
         Self {
             input: input.clone(),
+            paired_end: input.len() > 1,
             index: index.clone(),
             aligner,
             preset,
@@ -1215,14 +1364,6 @@ pub fn display_option_u64(opt: &Option<u64>) -> String
     }
 }
 
-pub fn display_option_usize(opt: &Option<usize>) -> String 
-{
-    match opt {
-        Some(s) => format!("{}", s),
-        None => format!(""),
-    }
-}
-
 pub fn display_option_f64(opt: &Option<f64>) -> String 
 {
     match opt {
@@ -1251,12 +1392,15 @@ pub struct VircovRecord {
     #[tabled(rename="Name")]
     #[tabled(display_with = "display_option_string")]
     pub name: Option<String>,
-    #[tabled(rename="Segment")]
-    #[tabled(display_with = "display_option_string")]
-    pub segment: Option<String>,
     #[tabled(rename="Taxid")]
     #[tabled(display_with = "display_option_string")]
     pub taxid: Option<String>,
+    #[tabled(rename="Genome")]
+    #[tabled(display_with = "display_option_string")]
+    pub genome: Option<String>,
+    #[tabled(rename="Segment")]
+    #[tabled(display_with = "display_option_string")]
+    pub segment: Option<String>,
     #[tabled(rename="Reference")]
     pub reference: String,
     #[tabled(rename="Length")]
@@ -1399,6 +1543,7 @@ impl VircovRecord {
             name: annotation.name,
             segment: annotation.segment,
             taxid: annotation.taxid,
+            genome: annotation.genome,
             reference_description: scan_record.description,
         })
     }
@@ -1406,7 +1551,7 @@ impl VircovRecord {
         coverage: ReferenceCoverage,
         intervals: bool,
     ) -> Self {
-        let scan_record = AlignmentRecord::from(coverage, intervals, None);
+        let scan_record = AlignmentRecord::from(&coverage, intervals, None);
         Self {
             id: None,
             index: None,
@@ -1431,10 +1576,11 @@ impl VircovRecord {
             consensus_completeness: None,
             consensus_alignments_mapq: None,
             consensus_coverage_mapq: None,
-            bin: None,
-            name: None,
-            segment: None,
-            taxid: None,
+            bin: coverage.bin,
+            name: coverage.name,
+            segment: coverage.segment,
+            taxid: coverage.taxid,
+            genome: coverage.genome,
             reference_description: scan_record.description
         }
 
@@ -1459,17 +1605,17 @@ pub struct AlignmentRecord {
 }
 
 impl AlignmentRecord {
-    pub fn from(coverage: ReferenceCoverage, intervals: bool, total_reads: Option<u64>) -> Self {
+    pub fn from(coverage: &ReferenceCoverage, intervals: bool, total_reads: Option<u64>) -> Self {
         
         Self {
-            reference: coverage.reference,
+            reference: coverage.reference.clone(),
             regions: coverage.regions,
             reads: coverage.reads,
             alignments: coverage.alignments,
             bases: coverage.bases,
             length: coverage.length,
             coverage: coverage.coverage,
-            description: coverage.description,
+            description: coverage.description.clone(),
             intervals: if intervals { 
                 coverage.intervals
                     .iter()

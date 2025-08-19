@@ -7,6 +7,7 @@ use crate::{error::VircovError, vircov::ConsensusConfig};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, clap::ValueEnum)]
 pub enum ConsensusAssembler {
+    #[serde(rename="ivar")]
     Ivar
 }
 

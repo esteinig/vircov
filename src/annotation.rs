@@ -9,7 +9,8 @@ use crate::{error::VircovError, utils::{get_niffler_fastx_writer, get_seq_id, pa
 pub enum AnnotationPreset {
     Virosaurus,
     Ictv,
-    Default
+    Default,
+    Cipher
 }
 
 /// Database annotation for Vircov
@@ -22,6 +23,7 @@ pub struct AnnotationRecord {
     name: Option<String>,
     description: Option<String>,
     taxid: Option<String>,
+    genome: Option<String>
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -31,6 +33,8 @@ pub struct AnnotationConfig {
     pub bin: String, 
     pub segment: String, 
     pub segment_nan: String, 
+    pub genome: String,
+    pub genome_nan: String,
     pub name: String,
     pub description: String,
     pub taxid: String
@@ -40,7 +44,8 @@ impl AnnotationConfig {
         match preset {
             AnnotationPreset::Default => Self::default(),
             AnnotationPreset::Ictv => Self::ictv(),
-            AnnotationPreset::Virosaurus => Self::virosaurus()
+            AnnotationPreset::Virosaurus => Self::virosaurus(),
+            AnnotationPreset::Cipher => Self::cipher()
         }
     }
     pub fn virosaurus() -> Self {
@@ -52,7 +57,9 @@ impl AnnotationConfig {
             name: String::from("usual_name"),
             segment_nan: String::from("N/A"),
             description: String::from("description"),
-            taxid: String::from("taxid")
+            taxid: String::from("taxid"),
+            genome: String::from("genome"),
+            genome_nan: String::from("N/A")
         }
     }
     pub fn ictv() -> Self {
@@ -64,12 +71,28 @@ impl AnnotationConfig {
             segment_nan: String::from("NAN"),
             name: String::from("name"),
             description: String::from("description"),
-            taxid: String::from("taxid")
+            taxid: String::from("taxid"),
+            genome: String::from("genome"),
+            genome_nan: String::from("NAN")
+        }
+    }
+    pub fn cipher() -> Self {
+        Self {
+            field_delimiter: String::from("|"),
+            value_delimiter: String::from("="),
+            bin: String::from("species"),
+            segment: String::from("segment"),
+            segment_nan: String::from("NAN"),
+            name: String::from("name"),
+            description: String::from("description"),
+            taxid: String::from("taxid"),
+            genome: String::from("genome"),
+            genome_nan: String::from("NAN")
         }
     }
     pub fn str_from_record(&self, record: &AnnotationRecord) -> String {
         format!(
-            "{bin}{vsep}{vbin}{fsep}{segment}{vsep}{vsegment}{fsep}{name}{vsep}{vname}{fsep}{description}{vsep}{vdescription}{fsep}{taxid}{vsep}{vtaxid}",
+            "{bin}{vsep}{vbin}{fsep}{segment}{vsep}{vsegment}{fsep}{name}{vsep}{vname}{fsep}{description}{vsep}{vdescription}{fsep}{taxid}{vsep}{vtaxid}{fsep}{genome}{vsep}{vgenome}",
             bin=self.bin,
             vsep=self.value_delimiter,
             vbin=record.bin,
@@ -81,21 +104,28 @@ impl AnnotationConfig {
             description=self.description,
             vdescription=record.description.clone().unwrap_or(String::from("")),
             taxid=self.taxid,
-            vtaxid=record.taxid.clone().unwrap_or(String::from(""))
+            vtaxid=record.taxid.clone().unwrap_or(String::from("")),
+            genome=self.genome,
+            vgenome=record.genome.clone().unwrap_or(self.genome_nan.clone())
         )
     }
-    pub fn segment_name_file(&self, segment: &str) -> String {
-        if segment == self.segment_nan {
-            "nan".to_string()
-        } else {
-            segment.to_string()
-        }
+    pub fn sanitize(&self, s: &str) -> String {
+        s.replace(" ", "_").replace("|", "_").replace(";", "_").replace("'", "_")
+    }
+    pub fn segment_is_nan(&self, segment: &str) -> bool {
+        segment == self.segment_nan
+    }
+    pub fn genome_is_nan(&self, genome: &str) -> bool {
+        genome == self.genome_nan
     }
     pub fn bin_field(&self) -> String {
         format!("{}{}", self.bin, self.value_delimiter)
     }
     pub fn segment_field(&self) -> String {
         format!("{}{}", self.segment, self.value_delimiter)
+    }
+    pub fn genome_field(&self) -> String {
+        format!("{}{}", self.genome, self.value_delimiter)
     }
     pub fn name_field(&self) -> String {
         format!("{}{}", self.name, self.value_delimiter)
@@ -117,7 +147,9 @@ impl Default for AnnotationConfig {
             segment_nan: String::from("NAN"),
             name: String::from("name"),
             description: String::from("description"),
-            taxid: String::from("taxid")
+            taxid: String::from("taxid"),
+            genome: String::from("genome"),
+            genome_nan: String::from("NAN"),
         }
     }
 }
@@ -127,6 +159,7 @@ pub struct Annotation {
     pub bin: Option<String>,
     pub name: Option<String>,
     pub segment: Option<String>,
+    pub genome: Option<String>,
     pub taxid: Option<String>
 }
 impl Annotation {
@@ -161,6 +194,14 @@ impl Annotation {
             _ => None
         };
 
+        let genome_fields: Vec<&str> = fields.iter().filter(|field| {
+            field.starts_with(&options.genome_field())
+        }).map(|x| *x).collect();
+        
+        let genome = match genome_fields.first() {
+            Some(f) => Some(f.trim().trim_start_matches(&options.genome_field()).to_string()),
+            _ => None
+        };
 
         let taxid_fields: Vec<&str> = fields.iter().filter(|field| {
             field.starts_with(&options.taxid_field())
@@ -172,7 +213,7 @@ impl Annotation {
         };
 
         Self {
-            bin, name, segment, taxid
+            bin, name, segment, genome, taxid
         }       
 
     }
@@ -228,6 +269,7 @@ impl DatabaseAnnotation {
             log::info!("Skipped {} sequences for which annotations were not provided", skipped.len());
             write_tsv(&skipped, &path)?;
             log::info!("Skipped sequence identifiers written to: {}", path.display());
+
         }
 
         Ok(())

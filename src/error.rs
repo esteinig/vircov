@@ -99,8 +99,11 @@ pub enum VircovError {
     #[error("failed to bin alignments - no reference sequences were provided")]
     BinSequenceError,
     /// Indicates failure when no best value from the grouped coverage fields could be selected
-    #[error("failed to select a best reference sequence")]
-    BinSelectReference,
+    #[error("failed to select a best reference segment")]
+    BinSelectSegment,
+    /// Indicates failure when no best value from the grouped coverage fields could be selected
+    #[error("failed to select a best reference genome")]
+    BinSelectGenome,
     /// Indicates failure when no reference name could be selected from the grouped identifier
     #[error("failed to extract a reference name from the bin identifier")]
     BinSelectReferenceName,

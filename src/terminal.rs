@@ -250,9 +250,9 @@ pub struct SubtypeArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ToolsCommands {
-    /// Process NCBI Virus meta data files to attempt genotype extraction
+    /// Annotate a database (.fasta) with headers for use in Vircov
     AnnotateDatabase(AnnotateDatabaseArgs),
-    /// Process NCBI Virus meta data files to attempt genotype extraction
+    /// Filter a database and metadata file for use in Vircov
     FilterDatabase(FilterDatabaseArgs),
     /// Validate genotype table order with matching sequence names at the same index
     ValidateGenotypes(ValidateGenotypesArgs),
@@ -379,7 +379,8 @@ pub struct AnnotateDatabaseArgs {
     /// 
     /// Columns: id (string, sequence identifier, required value), bin (string, binning variable, required value), 
     /// segment (string, segment annotation, optional value), name (string, organism name, optional value), 
-    /// description (string, sequence description, optional value), taxid (string, taxonomic identifier, optional value)
+    /// description (string, sequence description, optional value), taxid (string, taxonomic identifier, optional value),
+    /// genome (string, identifier of the parent genome if sequence is contig, optional value)
     #[clap(long, short = 'a')]
     pub annotations: PathBuf,
     /// Annotated database sequence file (.fasta)

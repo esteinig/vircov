@@ -152,8 +152,12 @@ pub struct ReferenceCoverage {
     pub bin: Option<String>,
     /// Segment of the reference sequence header annotation
     pub segment: Option<String>,
+    /// Genome of the reference sequence header annotation
+    pub genome: Option<String>,
     /// Name of the reference sequence header annotation
     pub name: Option<String>,
+    /// Taxid of the reference sequence header annotation
+    pub taxid: Option<String>,
     /// Descriptions of the reference sequence header annotation
     pub description: String,
     #[serde(skip)]
@@ -1143,7 +1147,9 @@ impl ReadAlignment {
                     description: target_description,
                     bin: annotation.bin,
                     segment: annotation.segment,
+                    genome: annotation.genome,
                     name: annotation.name,
+                    taxid: annotation.taxid,
                     read_id: unique_read_ids,
                     intervals: target_tags,
                 });
@@ -1153,9 +1159,11 @@ impl ReadAlignment {
         }
 
         if zero {
-            // This will add all reference sequences as null fields
+            
+            // Zero option will add all reference sequences as null fields
             // to the coverage field data - beware that this will
             // include these sequences in grouped output
+
             match &self.target_sequences {
                 Some(ref_seqs) => {
                     for (ref_seq, record) in ref_seqs.iter() {
@@ -1179,7 +1187,9 @@ impl ReadAlignment {
                                 description: descr,
                                 bin: annotation.bin,
                                 segment: annotation.segment,
+                                genome: annotation.genome,
                                 name: annotation.name,
+                                taxid: annotation.taxid,
                                 read_id: Vec::new(),
                                 intervals: Vec::new(),
                             });
